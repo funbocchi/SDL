@@ -3468,6 +3468,9 @@ if(SDL_SHARED)
       MACOSX_RPATH 1
       SOVERSION 0
       OUTPUT_NAME "SDL2-${LT_RELEASE}")
+  elseif(OHOS)
+    set_target_properties(SDL2 PROPERTIES
+      OUTPUT_NAME "SDL2")
   elseif(UNIX AND NOT ANDROID)
     set_target_properties(SDL2 PROPERTIES
       VERSION ${LT_VERSION}
@@ -3510,7 +3513,7 @@ if(SDL_SHARED)
       target_link_options(SDL2 PRIVATE -static-libgcc)
     endif()
   endif()
-  if(NOT ANDROID)
+  if(NOT ANDROID AND NOT OHOS)
     set_target_properties(SDL2 PROPERTIES DEBUG_POSTFIX "${SDL_CMAKE_DEBUG_POSTFIX}")
   endif()
   # Use `Compatible Interface Properties` to allow consumers to enforce a shared/static library
@@ -3738,7 +3741,7 @@ if(NOT SDL2_DISABLE_INSTALL)
     if(SDL_SHARED)
       set(SOEXT ${CMAKE_SHARED_LIBRARY_SUFFIX}) # ".so", ".dylib", etc.
       get_target_property(SONAME SDL2 OUTPUT_NAME)
-      if(NOT ANDROID AND NOT MINGW AND NOT OS2)
+      if(NOT ANDROID AND NOT MINGW AND NOT OS2 AND NOT OHOS)
           install(CODE "
             execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink
               \"lib${SONAME}${SOPOSTFIX}${SOEXT}\" \"libSDL2${SOPOSTFIX}${SOEXT}\"
