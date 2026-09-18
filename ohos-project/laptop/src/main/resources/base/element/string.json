@@ -1,0 +1,16 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "module description"
+    },
+    {
+      "name": "LaptopAbility_desc",
+      "value": "description"
+    },
+    {
+      "name": "LaptopAbility_label",
+      "value": "label"
+    }
+  ]
+}

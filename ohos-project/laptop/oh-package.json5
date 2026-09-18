@@ -1,0 +1,11 @@
+{
+  "name": "laptop",
+  "version": "1.0.0",
+  "description": "Please describe the basic information.",
+  "main": "",
+  "author": "",
+  "license": "",
+  "dependencies": {
+    "liblaptop.so": "file:./src/main/cpp/types/liblaptop"
+  }
+}
