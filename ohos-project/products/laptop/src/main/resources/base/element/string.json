@@ -11,6 +11,14 @@
     {
       "name": "LaptopAbility_label",
       "value": "label"
+    },
+    {
+      "name": "BaseSDL2Ability_desc",
+      "value": "description"
+    },
+    {
+      "name": "BaseSDL2Ability_label",
+      "value": "label"
     }
   ]
 }

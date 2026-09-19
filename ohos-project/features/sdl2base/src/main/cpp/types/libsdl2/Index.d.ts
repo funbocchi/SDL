@@ -1,0 +1,1 @@
+export const SDL_onCreateCallback: () => void;

@@ -3470,7 +3470,7 @@ if(SDL_SHARED)
       OUTPUT_NAME "SDL2-${LT_RELEASE}")
   elseif(OHOS)
     set_target_properties(SDL2 PROPERTIES
-      OUTPUT_NAME "SDL2")
+      OUTPUT_NAME "sdl2")
   elseif(UNIX AND NOT ANDROID)
     set_target_properties(SDL2 PROPERTIES
       VERSION ${LT_VERSION}
