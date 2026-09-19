@@ -9,7 +9,7 @@ static napi_module ohosSDL2Module = {
     .nm_flags = 0,
     .nm_filename = NULL,
     .nm_register_func = SDL_NapiInit,
-    .nm_modname = "SDL2",
+    .nm_modname = "sdl2",
     .nm_priv = ((void *)0),
     .reserved = { 0 },
 };

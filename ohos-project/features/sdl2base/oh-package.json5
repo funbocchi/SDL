@@ -1,0 +1,11 @@
+{
+  "name": "@roger/sdl2base",
+  "version": "1.0.0",
+  "description": "Please describe the basic information.",
+  "main": "Index.ets",
+  "author": "funbocchi",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "libsdl2.so": "file:./src/main/cpp/types/libsdl2"
+  }
+}

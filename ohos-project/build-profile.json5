@@ -28,7 +28,7 @@
   "modules": [
     {
       "name": "laptop",
-      "srcPath": "./laptop",
+      "srcPath": "./products/laptop",
       "targets": [
         {
           "name": "default",
@@ -37,6 +37,10 @@
           ]
         }
       ]
+    },
+    {
+      "name": "sdl2base",
+      "srcPath": "./features/sdl2base"
     }
   ]
 }
