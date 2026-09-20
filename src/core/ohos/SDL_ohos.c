@@ -3,7 +3,7 @@
 
 #include "SDL_stdinc.h"
 
-static napi_value OHOS_NAPI_InitInterface2Napi(napi_env env, napi_value exports)
+static napi_value OHOS_NAPI_RegisterNapiInterface(napi_env env, napi_value exports)
 {
     /// Export the interpreter to the ArkTS side.
     napi_property_descriptor desc[] = {
@@ -22,7 +22,7 @@ __attribute__((constructor)) void OHOS_NAPI_RegisterModule(void)
         .nm_version = 1,
         .nm_flags = 0,
         .nm_filename = NULL,
-        .nm_register_func = OHOS_NAPI_InitInterface2Napi,
+        .nm_register_func = OHOS_NAPI_RegisterNapiInterface,
         .nm_modname = "sdl2",
         .nm_priv = ((void *)0),
         .reserved = { 0 },
