@@ -1513,12 +1513,9 @@ elseif(OHOS)
       set(HAVE_OPENGLES TRUE)
       set(SDL_VIDEO_OPENGL_ES2 1)
     elseif(SDL_VULKAN)
+      # it seems that SDL2 did not properly adapt to Vulkan.
       set(SDL_VIDEO_VULKAN 1)
       set(HAVE_VULKAN TRUE)
-      if(SDL_RENDER_VULKAN)
-        set(SDL_VIDEO_RENDER_VULKAN 1)
-        set(HAVE_RENDER_VULKAN TRUE)
-      endif()
     endif()
   endif()
 
