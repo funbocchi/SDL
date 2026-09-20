@@ -19,11 +19,6 @@ if (HAIKU)
   set(LINKER_LANGUAGE CXX)
 endif()
 
-if(OHOS)
-  enable_language(CXX)
-  set(LINKER_LANGUAGE CXX)
-endif()
-
 set(EXTRA_LIBS)
 set(EXTRA_LDFLAGS)
 
@@ -1486,9 +1481,8 @@ elseif(EMSCRIPTEN)
 
 elseif(OHOS)
   # Link the default adaptation files required for OHOS.
-  file(GLOB OHOS_CORE_SOURCES_C ${SDL2_SOURCE_DIR}/src/core/ohos/*.c)
-  file(GLOB OHOS_CORE_SOURCES_CPP ${SDL2_SOURCE_DIR}/src/core/ohos/*.cpp)
-  list(APPEND SOURCE_FILES ${OHOS_CORE_SOURCES_C} ${OHOS_CORE_SOURCES_CPP})
+  file(GLOB OHOS_CORE_SOURCES ${SDL2_SOURCE_DIR}/src/core/ohos/*.c)
+  list(APPEND SOURCE_FILES ${OHOS_CORE_SOURCES})
   list(APPEND EXTRA_LIBS ace_napi.z hilog_ndk.z)
   if(SDL_MISC)
   endif()
