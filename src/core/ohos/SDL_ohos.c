@@ -7,7 +7,7 @@
 
 #include "SDL_ohos.h"
 
-static char *kSystemLocale = NULL;
+static char *s_system_locale = NULL;
 
 int OHOS_Napi_GetLocale(char *buf, size_t buflen)
 {
@@ -16,11 +16,11 @@ int OHOS_Napi_GetLocale(char *buf, size_t buflen)
     }
     buf[0] = '\0';
 
-    if (kSystemLocale == NULL || kSystemLocale[0] == '\0') {
+    if (s_system_locale == NULL || s_system_locale[0] == '\0') {
         return -1;
     }
 
-    strncpy(buf, kSystemLocale, buflen - 1);
+    strncpy(buf, s_system_locale, buflen - 1);
     buf[buflen - 1] = '\0';
     return 0;
 }
@@ -99,17 +99,17 @@ static void CacheSystemLocaleInstance(napi_env env)
             final_lan += 1 + strlen(country);
         }
 
-        if (kSystemLocale) {
-            free(kSystemLocale);
-            kSystemLocale = NULL;
+        if (s_system_locale) {
+            free(s_system_locale);
+            s_system_locale = NULL;
         }
 
-        kSystemLocale = (char *)malloc(final_lan + 1);
-        if (kSystemLocale != NULL) {
+        s_system_locale = (char *)malloc(final_lan + 1);
+        if (s_system_locale != NULL) {
             if (country[0]) {
-                SDL_snprintf(kSystemLocale, final_lan + 1, "%s_%s", language, country);
+                SDL_snprintf(s_system_locale, final_lan + 1, "%s_%s", language, country);
             } else {
-                SDL_snprintf(kSystemLocale, final_lan + 1, "%s", language);
+                SDL_snprintf(s_system_locale, final_lan + 1, "%s", language);
             }
         }
     }
