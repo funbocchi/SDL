@@ -57,6 +57,9 @@ static SDL_GetPowerInfo_Impl implementations[] = {
 #ifdef SDL_POWER_MACOSX         /* handles Mac OS X, Darwin. */
     SDL_GetPowerInfo_MacOSX,
 #endif
+#ifdef SDL_POWER_OHOS
+    SDL_GetPowerInfo_OHOS,
+#endif
 #ifdef SDL_POWER_HAIKU /* with BeOS euc.jp apm driver. Does this work on Haiku? */
     SDL_GetPowerInfo_Haiku,
 #endif
