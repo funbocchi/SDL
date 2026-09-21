@@ -3,7 +3,7 @@
   "buildOption": {
     "externalNativeOptions": {
       "path": "../../../CMakeLists.txt",
-      "arguments": "-DOHOS_STL=c++_shared",
+      "arguments": "",
       "cppFlags": ""
     },
     "resOptions": {
@@ -16,17 +16,19 @@
     {
       "name": "release",
       "arkOptions": {
-        "obfuscation" : {
-          "ruleOptions":{
+        "obfuscation": {
+          "ruleOptions": {
             "enable": false,
             "files": [
               "./obfuscation-rules.txt"
             ]
           },
-          "consumerFiles": ["./consumer-rules.txt"]
-          }
+          "consumerFiles": [
+            "./consumer-rules.txt"
+          ]
+        }
       },
-	  "nativeLib": {
+      "nativeLib": {
         "debugSymbol": {
           "strip": true,
           "exclude": []
@@ -39,7 +41,46 @@
       "name": "default"
     },
     {
-      "name": "ohosTest",
+      "name": "phone",
+      "config": {
+        "deviceType": [
+          "phone"
+        ],
+        "buildOption": {
+          "externalNativeOptions": {
+            "cppFlags": "-DOHPHONE=1",
+            "arguments": "-DDEVICE_TYPE=phone"
+          }
+        }
+      }
+    },
+    {
+      "name": "tablet",
+      "config": {
+        "deviceType": [
+          "tablet"
+        ],
+        "buildOption": {
+          "externalNativeOptions": {
+            "cppFlags": "-DOHTABLET=1",
+            "arguments": "-DDEVICE_TYPE=tablet"
+          }
+        }
+      }
+    },
+    {
+      "name": "laptop",
+      "config": {
+        "deviceType": [
+          "2in1"
+        ],
+        "buildOption": {
+          "externalNativeOptions": {
+            "cppFlags": "-DOH2IN1=1",
+            "arguments": "-DDEVICE_TYPE=2in1"
+          }
+        }
+      }
     }
   ]
 }
