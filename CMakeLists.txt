@@ -1530,6 +1530,8 @@ elseif(OHOS)
       set(HAVE_VULKAN TRUE)
     endif()
   endif()
+  
+  CheckPTHREAD()
 
 elseif(UNIX AND NOT APPLE AND NOT RISCOS AND NOT HAIKU)
   if(SDL_AUDIO)
