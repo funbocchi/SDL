@@ -403,7 +403,6 @@
 #cmakedefine SDL_TIMER_PSP @SDL_TIMER_PSP@
 #cmakedefine SDL_TIMER_PS2 @SDL_TIMER_PS2@
 #cmakedefine SDL_TIMER_N3DS @SDL_TIMER_N3DS@
-#cmakedefine SDL_TIMER_OHOS @SDL_TIMER_OHOS@
 
 /* Enable various video drivers */
 #cmakedefine SDL_VIDEO_DRIVER_ANDROID @SDL_VIDEO_DRIVER_ANDROID@
