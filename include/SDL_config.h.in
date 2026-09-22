@@ -313,6 +313,7 @@
 #undef SDL_AUDIO_DRIVER_WASAPI
 #undef SDL_AUDIO_DRIVER_WINMM
 #undef SDL_AUDIO_DRIVER_OS2
+#undef SDL_AUDIO_DRIVER_OHOS
 
 /* Enable various input drivers */
 #undef SDL_INPUT_LINUXEV
@@ -466,6 +467,7 @@
 #undef SDL_FILESYSTEM_VITA
 #undef SDL_FILESYSTEM_PSP
 #undef SDL_FILESYSTEM_PS2
+#undef SDL_FILESYSTEM_OHOS
 
 /* Enable misc subsystem */
 #undef SDL_MISC_DUMMY
