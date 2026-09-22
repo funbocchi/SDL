@@ -26,20 +26,31 @@
 
 #include "../SDL_sysaudio.h"
 
+#include <ohaudio/native_audiostream_base.h>
+
 /* Hidden "this" pointer for the audio functions */
-#define _THIS SDL_AudioDevice *_THIS;
+#define _THIS SDL_AudioDevice *this;
 
 #define NUM_BUFFERS 2 /* -- Don't lower this! */
 
 struct SDL_PrivateAudioData
 {
+    OH_AudioRenderer *renderer;
+    OH_AudioCapturer *capturer;
+    OH_AudioStreamBuilder *builder;
+   
     Uint8 *mixbuff;
-    int next_buffer;
-    Uint8 *pmixbuff[NUM_BUFFERS];
-    SDL_sem *playsem;
+    size_t mixbuf_size;
+    int num_buffers;
+
+    size_t callback_bytes;
+    size_t processed_bytes;
+
+    SDL_sem *semaphore;
+    SDL_atomic_t error_callback_triggered;
 };
 
-void OHAUDIO_ResumeDevices(void);
-void OHAUDIO_PauseDevices(void);
+void OHAudio_ResumeDevices(void);
+void OHAudio_PauseDevices(void);
 
 #endif
