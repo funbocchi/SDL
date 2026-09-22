@@ -23,45 +23,61 @@
 
 #ifdef SDL_FILESYSTEM_OHOS
 
+#include <sys/stat.h>
+
+#define ABILITY_RUNTIME_START_OPTIONS_H
+typedef enum AbilityRuntime_StartOptions AbilityRuntime_StartOptions;
+
+#include <AbilityKit/ability_runtime/application_context.h>
+
+#include "SDL_error.h"
 #include "SDL_filesystem.h"
 #include "SDL_stdinc.h"
 
-/**
-* @brief 在初始化时获取并完成对两个路径的初始化，具体代码通过 Napi 调用
-*/
-static char *s_base_path = NULL;
-static char *s_pref_path = NULL;
-
-void OHOS_SetBasePath(const char *path)
-{
-    if (s_base_path) {
-        SDL_free(s_base_path);
-    }
-    s_base_path = SDL_strdup(path);
-}
-
-void OHOS_SetPrefPath(const char *path)
-{
-    if (s_pref_path) {
-        SDL_free(s_pref_path);
-    }
-    s_pref_path = SDL_strdup(path);
-}
-
 char *SDLCALL SDL_GetBasePath(void)
 {
-    if(s_base_path==NULL){
+    char buffer[1024];
+    int32_t writelen = 0;
+    AbilityRuntime_ErrorCode rc;
+    size_t len;
+
+    rc = OH_AbilityRuntime_ApplicationContextGetBundleCodeDir(buffer, (int32_t)sizeof(buffer), &writelen);
+    if (rc != ABILITY_RUNTIME_ERROR_CODE_NO_ERROR) {
+        SDL_SetError("OH_AbilityRuntime_ApplicationContextGetBundleCodeDir failed: %d", (int)rc);
         return NULL;
     }
-    return SDL_strdup(s_base_path);
+
+    len = SDL_strlen(buffer);
+    if (len > 0 && buffer[len - 1] != '/') {
+        if (len + 1 < sizeof(buffer)) {
+            buffer[len] = '/';
+            buffer[len + 1] = '\0';
+        }
+    }
+    return SDL_strdup(buffer);
 }
 
 char *SDLCALL SDL_GetPrefPath(const char *org, const char *app)
 {
-    if(s_pref_path == NULL){
+    char buffer[1024];
+    int32_t writelen = 0;
+    AbilityRuntime_ErrorCode rc;
+    char *retval;
+
+    rc = OH_AbilityRuntime_ApplicationContextGetFilesDir(buffer, (int32_t)sizeof(buffer), &writelen);
+    if (rc != ABILITY_RUNTIME_ERROR_CODE_NO_ERROR) {
+        SDL_SetError("OH_AbilityRuntime_ApplicationContextGetFilesDir failed: %d", (int)rc);
         return NULL;
     }
-    return SDL_strdup(s_pref_path);
+
+    if (SDL_asprintf(&retval, "%s/%s/", buffer, app) < 0) {
+        SDL_OutOfMemory();
+        return NULL;
+    }
+    mkdir(buffer, 0755);
+    mkdir(retval, 0755);
+
+    return retval;
 }
 
 #endif
