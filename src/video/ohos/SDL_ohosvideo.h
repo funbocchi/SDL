@@ -18,5 +18,19 @@
      misrepresented as being the original software.
   3. This notice may not be removed or altered from any source distribution.
 */
+#include "../../SDL_internal.h"
 
-#include "SDL_internal.h"
+#ifndef SDL_OHOSVIDEO_H
+#define SDL_OHOSVIDEO_H
+
+#include "../SDL_sysvideo.h"
+
+typedef struct SDL_VideoData
+{
+    SDL_Rect text_rect;
+    int is_paused;
+    int is_pausing;
+    int pause_audio;
+} SDL_VideoData;
+
+#endif

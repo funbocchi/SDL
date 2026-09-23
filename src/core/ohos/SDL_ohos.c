@@ -7,6 +7,7 @@
 
 #include "SDL_ohos.h"
 
+static ArkUI_NativeNodeAPI_1 *nodeAPI = NULL;
 static char *s_system_locale = NULL;
 
 int OHOS_Napi_GetLocale(char *buf, size_t buflen)
@@ -37,8 +38,8 @@ static void CacheSystemLocaleInstance(napi_env env)
     napi_value locale_obj = NULL;
     napi_value base_name = NULL;
     size_t len = 0;
-    char language[4] = {0};
-    char country[3] = {0};
+    char language[4] = { 0 };
+    char country[3] = { 0 };
     char *raw_locale = NULL;
     char *token = NULL;
 
@@ -114,6 +115,38 @@ static void CacheSystemLocaleInstance(napi_env env)
         }
     }
     free(raw_locale);
+}
+
+static char *GetString(napi_env, env, napi_value vaalue)
+{
+    size_t len = 0;
+    napi_get_value_string_utf8(env, value, NULL, 0, &len);
+    char *str = (char *)malloc(len + 1);
+    if (str) {
+        napi_get_value_string_utf8(env, value, len + 1, &len);
+    }
+    return str;
+}
+
+static napi_value BindNode(napi_env env, napi_callback_info info)
+{
+    size_t argc = 2;
+    napi_value args[2] = { NULL };
+    ArkUI_NodeHandle handle = NULL;
+    OH_ArkUI_SurfaceHolder *holder = NULL;
+
+    napi_get_cb_info(env, info, &argc, args, NULL, NULL);
+
+    char *node_id = GetString(env, args[0]);
+    if (!node_id) {
+        return NULL;
+    }
+
+    OH_ArkUI_GetNodeHandleFromNapiValue(env, args[1], &handle);
+
+    holder = OH_ArkUI_SurfaceHolder_Create(handle);
+
+    
 }
 
 static napi_value OHOS_NAPI_RegisterNapiInterface(napi_env env, napi_value exports)
