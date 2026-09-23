@@ -7,6 +7,15 @@
 
 #include "SDL_ohos.h"
 
+typedef enum
+{
+    OHOS_PHONE,
+    OHOS_TABLET,
+    OHOS_2IN1,
+    OHOS_UNKNOWN
+} OHOS_DeviceType;
+
+static OHOS_DeviceType g_device_type = OHOS_UNKNOWN;
 static ArkUI_NativeNodeAPI_1 *nodeAPI = NULL;
 static char *s_system_locale = NULL;
 
@@ -145,8 +154,6 @@ static napi_value BindNode(napi_env env, napi_callback_info info)
     OH_ArkUI_GetNodeHandleFromNapiValue(env, args[1], &handle);
 
     holder = OH_ArkUI_SurfaceHolder_Create(handle);
-
-    
 }
 
 static napi_value OHOS_NAPI_RegisterNapiInterface(napi_env env, napi_value exports)
