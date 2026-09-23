@@ -30,6 +30,8 @@
 #include <ohaudio/native_audiocapturer.h>
 #include <ohaudio/native_audiorenderer.h>
 #include <ohaudio/native_audiostream_base.h>
+#include <ohaudio/native_audiostreambuilder.h>
+
 
 #if 0
 #else
