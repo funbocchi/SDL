@@ -1,1 +1,1 @@
-export { MainPage } from './src/main/ets/components/MainPage'
+export { SDL2SurfaceComponent } from './src/main/ets/components/SDL2SurfaceComponent'
