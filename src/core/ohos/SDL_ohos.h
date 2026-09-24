@@ -48,4 +48,13 @@ extern OHOS_SurfaceEntry g_surface_table[MAX_WINDOWS];
 
 int OHOS_Napi_GetLocale(char *buf, size_t buflen);
 
+/**
+* @brief 关鼠标痕迹显示
+*/
+extern SDL_OHOS_HideMousePointer(void);
+/**
+* @brief 开鼠标痕迹显示
+*/
+extern SDL_OHOS_ShowMousePointer(void);
+
 #endif

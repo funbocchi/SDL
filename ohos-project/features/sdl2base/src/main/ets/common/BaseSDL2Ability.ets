@@ -5,7 +5,7 @@ import sdl2 from "libsdl2.so"
 
 export default class BaseSDL2Ability extends UIAbility {
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
-    sdl2.onAppCreate();
+    sdl2.onCreate();
   }
 
   /**
@@ -18,7 +18,11 @@ export default class BaseSDL2Ability extends UIAbility {
 
   onWindowStageCreate(windowStage: window.WindowStage): void {
     windowStage.loadContent(this.getMainPagePath(), (err) => {
-
+      if(err.code){
+        
+        return;
+      }
+      const windowId:number = 
     });
   }
   onWindowStageWillDestroy(windowStage: window.WindowStage): void {
@@ -31,24 +35,24 @@ export default class BaseSDL2Ability extends UIAbility {
 
   }
   onDestroy(): void | Promise<void> {
-    sdl2.onAppDestroy();
+
   }
   onWillForeground(): void {
-
+    sdl2.onWillForeground();
   }
   onForeground(): void {
-    sdl2.onAppResume();
+
   }
   onDidForeground(): void {
-
+    sdl2.onDidForeground();
   }
   onWillBackground(): void {
-
+    sdl2.onWillBackground();
   }
   onBackground(): void {
-    sdl2.onAppPause();
+
   }
   onDidBackground(): void {
-
+    sdl2.onDidBackground();
   }
 }
