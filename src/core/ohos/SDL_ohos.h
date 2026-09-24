@@ -18,9 +18,33 @@
      misrepresented as being the original software.
   3. This notice may not be removed or altered from any source distribution.
 */
-
+#include "../../SDL_internal.h"
 #ifndef SDL_OHOS_H
 #define SDL_OHOS_H
+
+/**
+ * @brief 允许创建的最大窗口数
+ */
+#define MAX_WINDOWS 8
+
+typedef struct
+{
+    char id[128];
+    int used;
+
+    OH_ArkUI_SurfaceHolder *holder;
+    OH_ArkUI_SurfaceCallback *callback;
+    OHNativeWindow *native_window;
+    int surface_ready;
+
+    void *window_data;
+    int window_id;
+
+    SDL_mutex *mutex;
+    SDL_cond *cond;
+} OHOS_SurfaceEntry;
+
+extern OHOS_SurfaceEntry g_surface_table[MAX_WINDOWS];
 
 int OHOS_Napi_GetLocale(char *buf, size_t buflen);
 
