@@ -4,6 +4,10 @@ import SDL2 from 'libsdl2.so'
 export struct SDL2SurfaceComponent {
   private xcNode: FrameNode | null = null;
 
+  
+  aboutToAppear(): void {
+    const windowId=this.getUIContext().getWindowId();
+  }
   /**
    * @brief 采用 API19 的声明方式
    */

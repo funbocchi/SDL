@@ -47,6 +47,8 @@
 #define SDL_DYNAMIC_API 0
 #elif defined(__ANDROID__) /* probably not useful on Android. */
 #define SDL_DYNAMIC_API 0
+#elif defined(__OHOS__)
+#define SDL_DYNAMIC_API 0 /* probably not useful on OHOS. */
 #elif defined(__native_client__) && __native_client__  /* probably not useful on NACL. */
 #define SDL_DYNAMIC_API 0
 #elif defined(__EMSCRIPTEN__) && __EMSCRIPTEN__  /* probably not useful on Emscripten. */
