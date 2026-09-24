@@ -1,162 +1,66 @@
+/*
+  Simple DirectMedia Layer
+  Copyright (C) 1997-2026 Sam Lantinga <slouken@libsdl.org>
 
-#include "SDL_internal.h"
+  This software is provided 'as-is', without any express or implied
+  warranty.  In no event will the authors be held liable for any damages
+  arising from the use of this software.
 
-#include <napi/native_api.h>
+  Permission is granted to anyone to use this software for any purpose,
+  including commercial applications, and to alter it and redistribute it
+  freely, subject to the following restrictions:
 
-#include "SDL_stdinc.h"
+  1. The origin of this software must not be misrepresented; you must not
+     claim that you wrote the original software. If you use this software
+     in a product, an acknowledgment in the product documentation would be
+     appreciated but is not required.
+  2. Altered source versions must be plainly marked as such, and must not be
+     misrepresented as being the original software.
+  3. This notice may not be removed or altered from any source distribution.
+*/
+#include "../../SDL_internal.h"
 
-#include "SDL_ohos.h"
+#ifdef SDL_PLATFORM_OHOS
 
-typedef enum
+/// ArkUI 相关库
+#include <ace/xcomponent/native_interface_xcomponent.h>
+
+static napi_threadsafe_function CreateNapiThreadsafeFunction(napi_env env, const char *name, napi_threadsafe_function_call_js fn)
 {
-    OHOS_PHONE,
-    OHOS_TABLET,
-    OHOS_2IN1,
-    OHOS_UNKNOWN
-} OHOS_DeviceType;
+}
 
-static OHOS_DeviceType g_device_type = OHOS_UNKNOWN;
-static ArkUI_NativeNodeAPI_1 *nodeAPI = NULL;
-static char *s_system_locale = NULL;
-
-int OHOS_Napi_GetLocale(char *buf, size_t buflen)
+/// XComponent 组件相关
+/**
+ *@brief XComponent 组件相关回调
+ */
+static void OHOS_SurfaceHolder_OnCreated(OH_ArkUI_SurfaceHolder *holder)
 {
-    if (buflen == 0 || buf == NULL) {
-        return -1;
-    }
-    buf[0] = '\0';
+    OHNativeWindow *window = OH_ArkUI_XComponent_GetNativeWindow(holder);
+}
 
-    if (s_system_locale == NULL || s_system_locale[0] == '\0') {
-        return -1;
-    }
+static void OHOS_SurfaceHolder_OnChanged(OH_ArkUI_SurfaceHolder *holder, uint64_t width, uint64_t height)
+{
+}
 
-    strncpy(buf, s_system_locale, buflen - 1);
-    buf[buflen - 1] = '\0';
-    return 0;
+static void OHOS_SurfaceHolder_OnDestroyed(OH_ArkUI_SurfaceHolder *holder)
+{
 }
 
 /**
- * @brief 该接口用于获取 Locale 信息并保存在 C 侧，同时导出给Napi在ArkTS侧监听变化
- * @see https://developer.huawei.com/consumer/cn/doc/doccenter-references/api/js-apis-i18n#getsystemlocaleinstance20
+ * @brief 接收并绑定相关回调
  */
-static void CacheSystemLocaleInstance(napi_env env)
+static napi_value OHOS_NodeContent_Bind(napi_env env, napi_callback_info info)
 {
-    napi_value i18n_module = NULL;
-    napi_value system_obj = NULL;
-    napi_value get_locale_func = NULL;
-    napi_value locale_obj = NULL;
-    napi_value base_name = NULL;
-    size_t len = 0;
-    char language[4] = { 0 };
-    char country[3] = { 0 };
-    char *raw_locale = NULL;
-    char *token = NULL;
-
-    // 加载 ohos.i18n 模块
-    napi_status status = napi_load_module(env, "@ohos.i18n", &i18n_module);
-    if (status != napi_ok || i18n_module == NULL) {
-        return;
-    }
-
-    status = napi_get_named_property(env, i18n_module, "System", &system_obj);
-    if (status != napi_ok || system_obj == NULL) {
-        return;
-    }
-
-    status = napi_get_named_property(env, system_obj, "getSystemLocaleInstance", &get_locale_func);
-    if (status != napi_ok || get_locale_func == NULL) {
-        return;
-    }
-
-    status = napi_call_function(env, system_obj, get_locale_func, 0, NULL, &locale_obj);
-    if (status != napi_ok || locale_obj == NULL) {
-        return;
-    }
-
-    status = napi_get_named_property(env, locale_obj, "baseName", &base_name);
-    if (status != napi_ok || base_name == NULL) {
-        return;
-    }
-    napi_get_value_string_utf8(env, base_name, NULL, 0, &len);
-    if (len == 0) {
-        return;
-    }
-
-    raw_locale = (char *)malloc(len + 1);
-    if (raw_locale == NULL) {
-        return;
-    }
-    napi_get_value_string_utf8(env, base_name, raw_locale, len + 1, &len);
-
-    token = strtok(raw_locale, "-");
-    if (token) {
-        strncpy(language, token, sizeof(language) - 1);
-
-        token = strtok(NULL, "-");
-        while (token) {
-            if (strlen(token) == 4 && token[0] >= 'A' && token[0] <= 'Z') {
-                token = strtok(NULL, "-");
-                continue;
-            }
-
-            strncpy(country, token, sizeof(country) - 1);
-            break;
-        }
-    }
-    if (language[0]) {
-        size_t final_lan = strlen(language);
-        if (country[0]) {
-            final_lan += 1 + strlen(country);
-        }
-
-        if (s_system_locale) {
-            free(s_system_locale);
-            s_system_locale = NULL;
-        }
-
-        s_system_locale = (char *)malloc(final_lan + 1);
-        if (s_system_locale != NULL) {
-            if (country[0]) {
-                SDL_snprintf(s_system_locale, final_lan + 1, "%s_%s", language, country);
-            } else {
-                SDL_snprintf(s_system_locale, final_lan + 1, "%s", language);
-            }
-        }
-    }
-    free(raw_locale);
 }
 
-static char *GetString(napi_env, env, napi_value vaalue)
+/**
+ * @brief 解除绑定
+ */
+static napi_value OHOS_NodeContent_Unbind(napi_env env, napi_callback_info info)
 {
-    size_t len = 0;
-    napi_get_value_string_utf8(env, value, NULL, 0, &len);
-    char *str = (char *)malloc(len + 1);
-    if (str) {
-        napi_get_value_string_utf8(env, value, len + 1, &len);
-    }
-    return str;
 }
 
-static napi_value BindNode(napi_env env, napi_callback_info info)
-{
-    size_t argc = 2;
-    napi_value args[2] = { NULL };
-    ArkUI_NodeHandle handle = NULL;
-    OH_ArkUI_SurfaceHolder *holder = NULL;
-
-    napi_get_cb_info(env, info, &argc, args, NULL, NULL);
-
-    char *node_id = GetString(env, args[0]);
-    if (!node_id) {
-        return NULL;
-    }
-
-    OH_ArkUI_GetNodeHandleFromNapiValue(env, args[1], &handle);
-
-    holder = OH_ArkUI_SurfaceHolder_Create(handle);
-}
-
-static napi_value OHOS_NAPI_RegisterNapiInterface(napi_env env, napi_value exports)
+static napi_value OHOS_NAPI_RegisterInterface(napi_env env, napi_value exports)
 {
     /// Export the interpreter to the ArkTS side.
     napi_property_descriptor desc[] = {
@@ -171,6 +75,9 @@ static napi_value OHOS_NAPI_RegisterNapiInterface(napi_env env, napi_value expor
     return exports;
 }
 
+/**
+ * @brief 在引入 libsdl2.so 时加载，注册 napi 接口
+ */
 __attribute__((constructor)) void OHOS_NAPI_RegisterModule(void)
 {
     static napi_module ohos_napi_module = {
@@ -182,6 +89,7 @@ __attribute__((constructor)) void OHOS_NAPI_RegisterModule(void)
         .nm_priv = ((void *)0),
         .reserved = { 0 },
     };
-
     napi_module_register(&ohos_napi_module);
 }
+
+#endif /// SDL_PLATFORM_OHOS
