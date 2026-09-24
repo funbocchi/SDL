@@ -1,6 +1,6 @@
 {
   "name": "libsdl2.so",
   "types": "./Index.d.ts",
-  "version": "1.0.0",
+  "version": "2.32.11",
   "description": "SDL2 interfaces callable from ArkTS."
 }

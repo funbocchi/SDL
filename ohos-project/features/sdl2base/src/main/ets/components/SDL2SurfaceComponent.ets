@@ -4,22 +4,25 @@ import SDL2 from 'libsdl2.so'
 export struct SDL2SurfaceComponent {
   private xcNode: FrameNode | null = null;
 
+  /**
+   * @brief 采用 API19 的声明方式
+   */
   build() {
     XComponent({
       type: XComponentType.SURFACE
     })
-      .id('SDL2_SurfaceHolder')
+      .id('MainSDLSurfaceHolder')
       .onAttach(() => {
         this.xcNode = this.getUIContext()
-          .getAttachedFrameNodeById('SDL2_SurfaceHolder')
+          .getAttachedFrameNodeById('MainSDLSurfaceHolder')
         if (!this.xcNode) {
           return;
         }
-        SDL2.bindNode('SDL2_SurfaceHolder', this.xcNode);
+        SDL2.bindNode('MainSDLSurfaceHolder', this.xcNode);
         this.xcNode = null;
       })
       .onDetach(() => {
-        SDL2.unbindNode('SDL2_SurfaceHolder');
+        SDL2.unbindNode('MainSDLSurfaceHolder');
         this.xcNode = null;
       })
   }
