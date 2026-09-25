@@ -24,10 +24,7 @@
 
 #include "SDL_system.h"
 
-
 /// 临时变量存储位置
-
-
 
 /// ArkUI 相关库
 #include <ace/xcomponent/native_interface_xcomponent.h>
@@ -105,7 +102,7 @@ static napi_value OHOS_UIAbility_OnCreate(napi_env env, napi_callback_info info)
  */
 static napi_value OHOS_UIAbility_OnWillForeground(napi_env env, napi_callback_info info)
 {
-    SDL_OnApplicationWillEnterForeground();
+    SDL_SendAppEvent(SDL_APP_WILLENTERFOREGROUND);
     return Napi_GetUndefined(env);
 }
 
@@ -114,7 +111,7 @@ static napi_value OHOS_UIAbility_OnWillForeground(napi_env env, napi_callback_in
  */
 static napi_value OHOS_UIAbility_OnDidForeground(napi_env env, napi_callback_info info)
 {
-    SDL_OnApplicationDidBecomeActive();
+    SDL_SendAppEvent(SDL_APP_DIDENTERFOREGROUND);
     return Napi_GetUndefined(env);
 }
 
@@ -123,7 +120,7 @@ static napi_value OHOS_UIAbility_OnDidForeground(napi_env env, napi_callback_inf
  */
 static napi_value OHOS_UIAbility_OnWillBackground(napi_env env, napi_callback_info info)
 {
-    SDL_OnApplicationWillResignActive();
+    SDL_SendAppEvent(SDL_APP_WILLENTERBACKGROUND);
     return Napi_GetUndefined(env);
 }
 
@@ -132,8 +129,37 @@ static napi_value OHOS_UIAbility_OnWillBackground(napi_env env, napi_callback_in
  */
 static napi_value OHOS_UIAbility_OnDidBackground(napi_env env, napi_callback_info info)
 {
-    SDL_OnApplicationDidEnterBackground();
+    SDL_SendAppEvent(SDL_APP_DIDENTERBACKGROUND);
     return Napi_GetUndefined(env);
+}
+
+static napi_value OHOS_UIAbility_OnWindowStageWillDestroy(napi_env env, napi_callback_info info)
+{
+
+    return Napi_GetUndefined();
+}
+
+static napi_value OHOS_UIAbility_OnWindowStageDestroy(napi_env env, napi_callback_info info)
+{
+
+    return Napi_GetUndefined();
+}
+
+static napi_value OHOS_UIAbility_OnDestroy(napi_env env, napi_callback_info info)
+{
+    SDL_SendAppEvent(SDL_APP_TERMINATING);
+    SDL_SendQuit();
+    return Napi_GetUndefined();
+}
+
+static napi_value OHOS_UIAbility_OnMemory(napi_env env, napi_callback_info info) {
+    return Npai_GetUndefined();
+}
+
+/// Window 相关
+
+static napi_value OHOS_Window_RegisterWindow(napi_env env, napi_callback_info info)
+{
 }
 
 /// XComponent 组件相关
