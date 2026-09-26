@@ -44,11 +44,29 @@ typedef struct
     SDL_cond *cond;
 } OHOS_SurfaceEntry;
 
+typedef struct
+{
+    char title[256];
+    int width;
+    int height;
+    Uint32 flags;
+    int window_id;
+    char xcomponent_id[64];
+} OHOS_WindowRequest;
+
+typedef struct
+{
+    napi_threadsafe_function create_window_tsfn;
+    SDL_bool window_stage_ready; /* 对应 ArkTS 线程 windowStage 状态 */
+} OHOS_GlobalState;
+
 extern OHOS_SurfaceEntry g_surface_table[MAX_WINDOWS];
 
 int OHOS_Napi_GetLocale(char *buf, size_t buflen);
 
-extern int OHOS_Napi_RequestNewWindow();
+extern OHOS_GlobalState *OHOS_GetGlobalState(void);
+
+extern int OHOS_WindowStage_RequestWindow(SDL_Window *window);
 
 /**
  * @brief 关鼠标痕迹显示

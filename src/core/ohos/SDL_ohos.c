@@ -24,14 +24,12 @@
 
 #include "SDL_system.h"
 
+#include "SDL_ohos.h"
+
 /// 临时变量存储位置
 
 /// ArkUI 相关库
 #include <ace/xcomponent/native_interface_xcomponent.h>
-
-static napi_threadsafe_function CreateNapiThreadsafeFunction(napi_env env, const char *name, napi_threadsafe_function_call_js fn)
-{
-}
 
 /// 一些 Napi 工具
 
@@ -152,7 +150,8 @@ static napi_value OHOS_UIAbility_OnDestroy(napi_env env, napi_callback_info info
     return Napi_GetUndefined();
 }
 
-static napi_value OHOS_UIAbility_OnMemory(napi_env env, napi_callback_info info) {
+static napi_value OHOS_UIAbility_OnMemory(napi_env env, napi_callback_info info)
+{
     return Npai_GetUndefined();
 }
 
@@ -204,11 +203,12 @@ static napi_value OHOS_JS_RegisterInterface(napi_env env, napi_value exports)
 {
     /// Export the interpreter to the ArkTS side.
     napi_property_descriptor desc[] = {
-        { "onCreate", nullptr, OHOS_UIAbility_OnCreate, nullptr, nullptr, nullptr, napi_default, nullptr },
-        { "onWillForeground", nullptr, OHOS_UIAbility_OnWillForeground, nullptr, nullptr, nullptr, napi_default, nullptr },
-        { "onDidForeground", nullptr, OHOS_UIAbility_OnDidForeground, nullptr, nullptr, nullptr, napi_default, nullptr },
-        { "onWillBackground", nullptr, OHOS_UIAbility_OnWillBackground, nullptr, nullptr, nullptr, napi_default, nullptr },
-        { "onDidBackground", nullptr, OHOS_UIAbility_OnDidBackground, nullptr, nullptr, nullptr, napi_default, nullptr },
+        { "onCreate", NULL, OHOS_UIAbility_OnCreate, NULL, NULL, NULL, napi_default, NULL },
+        { "onWillForeground", NULL, OHOS_UIAbility_OnWillForeground, NULL, NULL, NULL, napi_default, NULL },
+        { "onDidForeground", NULL, OHOS_UIAbility_OnDidForeground, NULL, NULL, NULL, napi_default, NULL },
+        { "onWillBackground", NULL, OHOS_UIAbility_OnWillBackground, NULL, NULL, NULL, napi_default, NULL },
+        { "onDidBackground", NULL, OHOS_UIAbility_OnDidBackground, NULL, NULL, NULL, napi_default, NULL },
+        { "bindNodeCallback", NULL, OHOS_NodeContent_BindNodeCallback, NULL, NULL, NULL, napi_default, NULL }
     };
 
     /// Perhaps it would be better to add a callback for the registration result here.
