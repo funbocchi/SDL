@@ -65,6 +65,11 @@
 #undef __LINUX__ /* do we need to do this? */
 #define __ANDROID__ 1
 #endif
+#if defined (OHOS) || defined (__OHOS__)
+#undef __OHOS__
+#undef __LINUX__ /* For safety reasons, remove it. */
+#define __OHOS__ 1
+#endif
 #if defined(__NGAGE__)
 #undef __NGAGE__
 #define __NGAGE__ 1
