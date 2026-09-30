@@ -83,7 +83,7 @@ include(${SDL2_SOURCE_DIR}/cmake/CheckCPUArchitecture.cmake)
 # Enable large file support on 32-bit glibc, so that we can access files
 # with large inode numbers
 check_symbol_exists("__GLIBC__" "stdlib.h" LIBC_IS_GLIBC)
-if (LIBC_IS_GLIBC AND CMAKE_SIZEOF_VOID_P EQUAL 4)
+if ((LIBC_IS_GLIBC OR LIBC_IS_MUSL) AND CMAKE_SIZEOF_VOID_P EQUAL 4)
     add_definitions(-D_FILE_OFFSET_BITS=64)
 endif()
 
@@ -164,7 +164,7 @@ endif()
 SDL_DetectCMakePlatform()
 
 # Don't mistake osx for unix
-if(UNIX AND NOT ANDROID AND NOT APPLE AND NOT RISCOS)
+if(UNIX AND NOT ANDROID AND NOT APPLE AND NOT RISCOS AND NOT OHOS)
   set(UNIX_SYS ON)
 else()
   set(UNIX_SYS OFF)
@@ -189,7 +189,7 @@ else()
   set(SDL_PTHREADS_ENABLED_BY_DEFAULT OFF)
 endif()
 
-if(UNIX_SYS OR ANDROID)
+if(UNIX_SYS OR ANDROID OR OHOS)
   set(SDL_CLOCK_GETTIME_ENABLED_BY_DEFAULT ON)
 else()
   set(SDL_CLOCK_GETTIME_ENABLED_BY_DEFAULT OFF)
@@ -199,7 +199,7 @@ endif()
 #  so we'll just use libusb when it's available. libusb does not support iOS,
 #  so we default to yes on iOS.
 #  TODO: Windows can support libusb, the hid.c file just depends on Unix APIs
-if((WINDOWS AND NOT WINDOWS_STORE) OR IOS OR TVOS OR VISIONOS OR WATCHOS OR ANDROID)
+if((WINDOWS AND NOT WINDOWS_STORE) OR IOS OR TVOS OR VISIONOS OR WATCHOS OR ANDROID OR OHOS)
   set(HIDAPI_SKIP_LIBUSB TRUE)
 else()
   set(HIDAPI_SKIP_LIBUSB FALSE)
@@ -245,7 +245,7 @@ endif()
 if(UNIX OR MINGW OR MSYS OR OS2 OR (USE_CLANG AND NOT WINDOWS) OR VITA OR PSP OR PS2 OR N3DS OR SDL_CPU_ARM64EC)
   set(OPT_DEF_LIBC ON)
 endif()
-if(WINDOWS OR MACOS OR IOS OR TVOS OR VISIONOS OR WATCHOS)
+if(WINDOWS OR MACOS OR IOS OR TVOS OR VISIONOS OR WATCHOS OR OHOS)
   set(SDL_SYSTEM_ICONV_DEFAULT OFF)
 else()
   set(SDL_SYSTEM_ICONV_DEFAULT ON)
@@ -485,7 +485,7 @@ set_option(SDL_WASAPI              "Use the Windows WASAPI audio driver" ${WINDO
 set_option(SDL_RENDER_D3D          "Enable the Direct3D render driver" ${WINDOWS})
 set_option(SDL_RENDER_METAL        "Enable the Metal render driver" ${APPLE})
 set_option(SDL_VIVANTE             "Use Vivante EGL video driver" ${UNIX_SYS})
-dep_option(SDL_VULKAN              "Enable Vulkan support" ON "ANDROID OR APPLE OR LINUX OR WINDOWS" OFF)
+dep_option(SDL_VULKAN              "Enable Vulkan support" ON "ANDROID OR APPLE OR LINUX OR WINDOWS OR OHOS" OFF)
 set_option(SDL_METAL               "Enable Metal support" ${APPLE})
 set_option(SDL_KMSDRM              "Use KMS DRM video driver" ${UNIX_SYS})
 dep_option(SDL_KMSDRM_SHARED       "Dynamically load KMS DRM support" ON "SDL_KMSDRM" OFF)
@@ -1480,7 +1480,7 @@ elseif(EMSCRIPTEN)
   CheckPTHREAD()
   CheckLibUnwind()
 
-elseif(UNIX AND NOT APPLE AND NOT RISCOS AND NOT HAIKU)
+elseif(UNIX AND NOT APPLE AND NOT RISCOS AND NOT HAIKU AND NOT OHOS)
   if(SDL_AUDIO)
     if(SYSV5 OR SOLARIS OR HPUX)
         # Newer Solaris-based systems, like OpenIndiana, don't have this interface anymore. Check for the header first.
@@ -1794,6 +1794,46 @@ elseif(UNIX AND NOT APPLE AND NOT RISCOS AND NOT HAIKU)
     set(HAVE_VSNPRINTF 0)
     set(USE_POSIX_SPAWN 1)
   endif()
+
+elseif(OHOS)
+  file(GLOB OHOS_CORE_SOURCES ${SDL2_SOURCE_DIR}/src/core/ohos/*.c)
+  list(APPEND SOURCE_FILES ${OHOS_CORE_SOURCES})
+  list(APPEND EXTRA_LIBS ace_napi.z hilog_ndk.z)
+  
+    # SDL_spinlock.c Needs to be compiled in ARM mode.
+  # There seems to be no better way currently to set the ARM mode.
+  # see: https://issuetracker.google.com/issues/62264618
+  # Another option would be to set ARM mode to all compiled files
+  cmake_push_check_state(RESET)
+  set(CMAKE_REQUIRED_FLAGS "-Werror=unused-command-line-argument")
+  check_c_compiler_flag(-marm HAVE_ARM_MODE)
+  if(HAVE_ARM_MODE)
+    set_property(SOURCE "${SDL2_SOURCE_DIR}/src/atomic/SDL_spinlock.c" APPEND_STRING PROPERTY COMPILE_FLAGS " -marm")
+  endif()
+  cmake_pop_check_state()
+  
+  if(SDL_TIMERS)
+    set(SDL_TIMER_UNIX 1)
+    file(GLOB TIMER_SOURCES ${SDL2_SOURCE_DIR}/src/timer/unix/*.c)
+    list(APPEND SOURCE_FILES ${TIMER_SOURCES})
+    set(HAVE_SDL_TIMERS TRUE)
+  endif()
+  if(SDL_POWER)
+    set(SDL_POWER_OHOS 1)
+    file(GLOB OHOS_POWER_SOURCES ${SDL2_SOURCE_DIR}/src/power/ohos/*.c)
+    list(APPEND SOURCE_FILES ${OHOS_POWER_SOURCES})
+    list(APPEND EXTRA_LIBS ohbattery_info)
+    set(HAVE_SDL_POWER TRUE)
+  endif()
+  if(SDL_FILESYSTEM)
+    set(SDL_FILESYSTEM_OHOS 1)
+    file(GLOB OHOS_FILESYSTEM_SOURCES ${SDL2_SOURCE_DIR}/src/filesystem/ohos/*.c)
+    list(APPEND SOURCE_FILES ${OHOS_FILESYSTEM_SOURCES})
+    list(APPEND EXTRA_LIBS ability_runtime)
+    set(HAVE_SDL_FILESYSTEM TRUE)
+  endif()
+  CheckPTHREAD()  
+
 elseif(WINDOWS)
   find_program(WINDRES windres)
 
@@ -3482,7 +3522,12 @@ if(SDL_SHARED)
       MACOSX_RPATH 1
       SOVERSION 0
       OUTPUT_NAME "SDL2-${LT_RELEASE}")
-  elseif(UNIX AND NOT ANDROID)
+  elseif(OHOS)
+    set_target_properties(SDL2 PROPERTIES
+      VERSION ${LT_VERSION}
+      SOVERSION ${LT_MAJOR}
+      OUTPUT_NAME "sdl2")
+  elseif(UNIX AND NOT ANDROID AND NOT OHOS)
     set_target_properties(SDL2 PROPERTIES
       VERSION ${LT_VERSION}
       SOVERSION ${LT_MAJOR}

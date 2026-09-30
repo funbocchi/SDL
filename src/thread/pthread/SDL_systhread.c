@@ -171,8 +171,8 @@ void SDL_SYS_SetupThread(const char *name)
     pthread_sigmask(SIG_BLOCK, &mask, 0);
 #endif /* !__NACL__ */
 
-
-#ifdef PTHREAD_CANCEL_ASYNCHRONOUS
+ 
+#if defined (PTHREAD_CANCEL_ASYNCHRONOUS) && !defined (__OHOS__)
     /* Allow ourselves to be asynchronously cancelled */
     {
         int oldstate;

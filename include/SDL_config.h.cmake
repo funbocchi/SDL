@@ -500,6 +500,7 @@
 #cmakedefine SDL_POWER_VITA @SDL_POWER_VITA@
 #cmakedefine SDL_POWER_PSP @SDL_POWER_PSP@
 #cmakedefine SDL_POWER_N3DS @SDL_POWER_N3DS@
+#cmakedefine SDL_POWER_OHOS @SDL_POWER_OHOS@
 
 /* Enable system filesystem support */
 #cmakedefine SDL_FILESYSTEM_ANDROID @SDL_FILESYSTEM_ANDROID@
@@ -515,6 +516,7 @@
 #cmakedefine SDL_FILESYSTEM_PSP @SDL_FILESYSTEM_PSP@
 #cmakedefine SDL_FILESYSTEM_PS2 @SDL_FILESYSTEM_PS2@
 #cmakedefine SDL_FILESYSTEM_N3DS @SDL_FILESYSTEM_N3DS@
+#cmakedefine SDL_FILESYSTEM_OHOS @SDL_FILESYSTEM_OHOS@
 
 /* Enable misc subsystem */
 #cmakedefine SDL_MISC_DUMMY @SDL_MISC_DUMMY@
