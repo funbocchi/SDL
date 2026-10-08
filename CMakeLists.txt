@@ -3586,7 +3586,7 @@ if(SDL_SHARED)
       target_link_options(SDL2 PRIVATE -static-libgcc)
     endif()
   endif()
-  if(NOT ANDROID)
+  if(NOT ANDROID AND NOT OHOS)
     set_target_properties(SDL2 PROPERTIES DEBUG_POSTFIX "${SDL_CMAKE_DEBUG_POSTFIX}")
   endif()
   # Use `Compatible Interface Properties` to allow consumers to enforce a shared/static library

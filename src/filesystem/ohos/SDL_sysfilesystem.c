@@ -27,27 +27,9 @@
 #include "SDL_filesystem.h"
 #include "SDL_stdinc.h"
 
-
 #include <sys/stat.h>
 
-/*
- * application_context.h indirectly includes start_options.h, which uses
- * C++ reference syntax (int32_t &displayId) and cannot be compiled in pure C.
- * Declare the required function prototypes manually here to avoid including
- * the incompatible header file.
- * Link against libability_runtime.so via -lability_runtime at link time.
- * The issue seems to have been fixed in API 26, but the current code is based on API 23, so the current approach is retained.
- */
-
-typedef int32_t AbilityRuntime_ErrorCode;
-
-#define ABILITY_RUNTIME_ERROR_CODE_NO_ERROR 0
-
-extern AbilityRuntime_ErrorCode OH_AbilityRuntime_ApplicationContextGetBundleCodeDir(
-    char *buffer, int32_t bufferLen, int32_t *writeLen);
-
-extern AbilityRuntime_ErrorCode OH_AbilityRuntime_ApplicationContextGetFilesDir(
-    char *buffer, int32_t bufferLen, int32_t *writeLen);
+#include <AbilityKit/ability_runtime/application_context.h>
 
 char *SDL_GetBasePath(void)
 {
