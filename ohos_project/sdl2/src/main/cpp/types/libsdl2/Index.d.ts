@@ -1,0 +1,1 @@
+export const updateLocale: (language: string, region: string) => void;

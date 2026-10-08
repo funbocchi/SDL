@@ -1,0 +1,11 @@
+{
+  "name": "@roger/sdl2",
+  "version": "2.33.0",
+  "description": "版本号对齐 sdl2 官方库",
+  "main": "Index.ets",
+  "author": "funbocchi",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "libsdl2.so": "file:./src/main/cpp/types/libsdl2"
+  }
+}
