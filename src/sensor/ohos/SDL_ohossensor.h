@@ -18,23 +18,11 @@
      misrepresented as being the original software.
   3. This notice may not be removed or altered from any source distribution.
 */
-#include "../../SDL_internal.h"
+#include "SDL_config.h"
 
-#ifndef SDL_OHAUDIO_H
-#define SDL_OHAUDIO_H
-
-#include "../SDL_sysaudio.h"
-#include <ohaudio/native_audiostream_base.h>
-
-/* Hidden "this" pointer for the audio functions */
-#define _THIS SDL_AudioDevice *this
-
-struct SDL_PrivateAudioData
+/* The private structure used to keep track of a sensor */
+struct sensor_hwdata
 {
-    OH_AudioRenderer *renderer;
-    OH_AudioCapturer *capturer;
-} SDL_PrivateAudioData;
-
-#endif
+};
 
 /* vi: set ts=4 sw=4 expandtab: */

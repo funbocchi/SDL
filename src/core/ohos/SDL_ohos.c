@@ -116,6 +116,7 @@ static napi_value Napi_GetUndefined(napi_env env)
     }
     return retval;
 }
+
 /* Napi tool end */
 
 /**
@@ -237,3 +238,5 @@ __attribute__((constructor)) void OHOS_NAPI_RegisterModule(void)
 }
 
 #endif
+
+/* vi: set ts=4 sw=4 expandtab: */

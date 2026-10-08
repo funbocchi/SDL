@@ -18,23 +18,20 @@
      misrepresented as being the original software.
   3. This notice may not be removed or altered from any source distribution.
 */
-#include "../../SDL_internal.h"
 
-#ifndef SDL_OHAUDIO_H
-#define SDL_OHAUDIO_H
+#ifndef SDL_config_ohos_h
+#define SDL_config_ohos_h
 
-#include "../SDL_sysaudio.h"
-#include <ohaudio/native_audiostream_base.h>
+#define SDL_config_h_
 
-/* Hidden "this" pointer for the audio functions */
-#define _THIS SDL_AudioDevice *this
+#include "SDL_platform.h"
 
-struct SDL_PrivateAudioData
-{
-    OH_AudioRenderer *renderer;
-    OH_AudioCapturer *capturer;
-} SDL_PrivateAudioData;
+
+
+/* Enable system power support */
+#define SDL_POWER_OHOS
+
+/* Enable the filesystem driver */
+#define SDL_FILESYSTEM_OHOS
 
 #endif
-
-/* vi: set ts=4 sw=4 expandtab: */

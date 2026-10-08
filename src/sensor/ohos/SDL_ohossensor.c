@@ -20,20 +20,9 @@
 */
 #include "../../SDL_internal.h"
 
-#ifndef SDL_OHAUDIO_H
-#define SDL_OHAUDIO_H
+#include "SDL_config.h"
 
-#include "../SDL_sysaudio.h"
-#include <ohaudio/native_audiostream_base.h>
-
-/* Hidden "this" pointer for the audio functions */
-#define _THIS SDL_AudioDevice *this
-
-struct SDL_PrivateAudioData
-{
-    OH_AudioRenderer *renderer;
-    OH_AudioCapturer *capturer;
-} SDL_PrivateAudioData;
+#ifdef SDL_SENSOR_OHOS
 
 #endif
 
