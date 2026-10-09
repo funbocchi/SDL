@@ -1,10 +1,27 @@
-//
-// Created on 2026/9/29.
-//
-// Node APIs are not fully supported. To solve the compilation error of the interface cannot be found,
-// please include "napi/native_api.h".
+/*
+  Simple DirectMedia Layer
+  Copyright (C) 1997-2026 Sam Lantinga <slouken@libsdl.org>
 
-#ifndef SDL2_OHOS_SDL_OHOSWINDOW_H
-#define SDL2_OHOS_SDL_OHOSWINDOW_H
+  This software is provided 'as-is', without any express or implied
+  warranty.  In no event will the authors be held liable for any damages
+  arising from the use of this software.
 
-#endif //SDL2_OHOS_SDL_OHOSWINDOW_H
+  Permission is granted to anyone to use this software for any purpose,
+  including commercial applications, and to alter it and redistribute it
+  freely, subject to the following restrictions:
+
+  1. The origin of this software must not be misrepresented; you must not
+     claim that you wrote the original software. If you use this software
+     in a product, an acknowledgment in the product documentation would be
+     appreciated but is not required.
+  2. Altered source versions must be plainly marked as such, and must not be
+     misrepresented as being the original software.
+  3. This notice may not be removed or altered from any source distribution.
+*/
+
+#ifndef SDL_OHOSWINDOW_H
+#define SDL_OHOSWINDOW_H
+
+#include "../SDL_sysvideo.h"
+
+#endif //SDL_OHOSWINDOW_H

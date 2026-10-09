@@ -84,6 +84,9 @@ static const AudioBootStrap *const bootstrap[] = {
 #ifdef SDL_AUDIO_DRIVER_PAUDIO
     &PAUDIO_bootstrap,
 #endif
+#ifdef SDL_AUDIO_DRIVER_OHOS
+    &OHAudio_bootstrap,
+#endif
 #ifdef SDL_AUDIO_DRIVER_HAIKU
     &HAIKUAUDIO_bootstrap,
 #endif
@@ -134,9 +137,6 @@ static const AudioBootStrap *const bootstrap[] = {
 #endif
 #ifdef SDL_AUDIO_DRIVER_DUMMY
     &DUMMYAUDIO_bootstrap,
-#endif
-#ifdef SDL_AUDIO_DRIVER_OHOS
-    &OHAudio_bootstrap,
 #endif
     NULL
 };
