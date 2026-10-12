@@ -37,11 +37,11 @@ static char s_locale_region[4] = { 0 };
 /* Napi tools start */
 
 /**
- * @brief 创建一个 UTF-8 编码的 napi 字符串值。
+ * @brief Creates a UTF-8 encoded napi string value.
  *
- * @param env NAPI 环境句柄。
- * @param str 以 '\0' 结尾的 C 字符串。若为 NULL 则直接返回 NULL。
- * @return 成功返回 napi_value，失败或 str 为 NULL 时返回 NULL。
+ * @param env The NAPI environment handle.
+ * @param str A null-terminated C string. Returns NULL if this is NULL.
+ * @return napi_value on success, NULL on failure or if str is NULL.
  */
 static napi_value Napi_CreateString(napi_env env, const char *str)
 {
@@ -56,10 +56,10 @@ static napi_value Napi_CreateString(napi_env env, const char *str)
 }
 
 /**
- * @brief 创建一个空的 napi 对象。
+ * @brief Creates an empty napi object.
  *
- * @param env NAPI 环境句柄。
- * @return 成功返回 napi_value，失败返回 NULL。
+ * @param env The NAPI environment handle.
+ * @return napi4value on success, NULL on failure.
  */
 static napi_value Napi_CreateObj(napi_env env)
 {
@@ -71,11 +71,11 @@ static napi_value Napi_CreateObj(napi_env env)
 }
 
 /**
- * @brief 创建一个指定长度的 napi 数组。
+ * @brief Creates an napi array with the specified length.
  *
- * @param env NAPI 环境句柄。
- * @param len 数组长度。
- * @return 成功返回 napi_value，失败返回 NULL。
+ * @param env The NAPI environment handle.
+ * @param len The array length.
+ * @return napi_value on success, NULL on failure.
  */
 static napi_value Napi_CreateArray(napi_env env, size_t len)
 {
@@ -87,11 +87,11 @@ static napi_value Napi_CreateArray(napi_env env, size_t len)
 }
 
 /**
- * @brief 创建一个 napi 布尔值。
+ * @brief Creates an napi boolean value.
  *
- * @param env NAPI 环境句柄。
- * @param b 布尔值，true 或 false。
- * @return 成功返回 napi_value，失败返回 NULL。
+ * @param env The NAPI environment handle.
+ * @param b Boolean value, true or false.
+ * @return napi_value on success, NULL on failure.
  */
 static napi_value Napi_CreateBoolean(napi_env env, bool b)
 {
@@ -103,10 +103,10 @@ static napi_value Napi_CreateBoolean(napi_env env, bool b)
 }
 
 /**
- * @brief 获取 napi 的 undefined 值。
+ * @brief Gets the undefined value from napi.
  *
- * @param env NAPI 环境句柄。
- * @return 成功返回表示 undefined 的 napi_value，失败返回 NULL。
+ * @param env The NAPI environment handle.
+ * @return napi_value representing undefined on success, NULL on failure.
  */
 static napi_value Napi_GetUndefined(napi_env env)
 {
