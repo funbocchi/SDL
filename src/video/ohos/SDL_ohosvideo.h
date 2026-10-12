@@ -18,8 +18,44 @@
      misrepresented as being the original software.
   3. This notice may not be removed or altered from any source distribution.
 */
+#include "../../SDL_internal.h"
 
 #ifndef SDL_OHOSVIDEO_H
 #define SDL_OHOSVIDEO_H
 
-#endif //SDL_OHOSVIDEO_H
+#include <window_manager/oh_display_info.h>
+#include <EGL/egl.h>
+
+#include "../SDL_sysvideo.h"
+#include "SDL_mutex.h"
+#include "SDL_rect.h"
+
+typedef struct
+{
+#ifdef SDL_VIDEO_OPENGL_EGL
+    EGLDisplay egl_display;
+    EGLConfig egl_config;
+    EGLint egl_major;
+    EGLint egl_minor;
+#endif
+} OHOS_VideoDeviceData;
+
+/* Used to fill private data */
+typedef struct
+{
+    Uint32 id;
+    int physical_width;
+    int physical_height;
+    Uint32 available_width;
+    Uint32 available_height;
+    float density_dpi;
+    float density_pixels;
+    float scaled_density;
+    float x_dpi;
+    float y_dpi;
+    NativeDisplayManager_Rotation rotation;
+} OHOS_VideoDisplayData;
+
+#endif // SDL_OHOSVIDEO_H
+
+/* vi: set ts=4 sw=4 expandtab: */

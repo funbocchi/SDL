@@ -171,7 +171,7 @@ int SDL_OHOS_GetLocale(char *buf, size_t buflen)
  * @param args[0] The language code string, e.g. "zh", "en".
  * @param args[1] The region code string, e.g. "CN", "US". Can be an empty string.
  */
-static napi_value OHOS_NAPI_UpdateLocale(napi_env env, napi_callback_info info)
+static napi_value OHOS_Napi_UpdateLocale(napi_env env, napi_callback_info info)
 {
     size_t argc = 2;
     napi_value args[2] = { NULL };
@@ -213,23 +213,23 @@ static napi_value OHOS_NAPI_UpdateLocale(napi_env env, napi_callback_info info)
  * @param exports The exports object to attach properties to.
  * @return The exports object with registered properties.
  */
-static napi_value OHOS_NAPI_RegisterInterface(napi_env env, napi_value exports)
+static napi_value OHOS_Napi_RegisterInterface(napi_env env, napi_value exports)
 {
     napi_property_descriptor desc[] = {
-        { "updateLocale", NULL, OHOS_NAPI_UpdateLocale, NULL, NULL, NULL, napi_default, NULL },
+        { "updateLocale", NULL, OHOS_Napi_UpdateLocale, NULL, NULL, NULL, napi_default, NULL },
     };
 
     napi_define_properties(env, exports, SDL_arraysize(desc), desc);
     return exports;
 }
 
-__attribute__((constructor)) void OHOS_NAPI_RegisterModule(void)
+__attribute__((constructor)) void OHOS_Napi_RegisterModule(void)
 {
     static napi_module ohos_napi_module = {
         .nm_version = 1,
         .nm_flags = 0,
         .nm_filename = NULL,
-        .nm_register_func = OHOS_NAPI_RegisterInterface,
+        .nm_register_func = OHOS_Napi_RegisterInterface,
         .nm_modname = "sdl2",
         .nm_priv = ((void *)0),
         .reserved = { 0 },
