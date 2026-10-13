@@ -1,8 +1,6 @@
-import sdl2 from 'libsdl2.so'
 
-@Entry
 @ComponentV2
-struct SDL2Page {
+export struct SDL2XC {
 
   build() {
     Stack() {
