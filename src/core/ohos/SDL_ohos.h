@@ -28,12 +28,27 @@
 extern "C" {
 #endif
 
+#include <napi/native_api.h>
+
 #include "SDL_audio.h"
 #include "SDL_rect.h"
 #include "SDL_video.h"
 
-/* Locale */
+typedef struct
+{
+    Uint32 id;
+    const char *title;
+    int x;
+    int y;
+    int w;
+    int h;
+    SDL_bool fullscreen;
+    SDL_bool borderless;
+} OHOSWindowRequestParam;
+
 extern int SDL_OHOS_GetLocale(char *buf, size_t buflen);
+
+extern int SDL_OHOS_RequestWindow(OHOSWindowRequestParam *params);
 
 /* Ends C function definitions when using C++ */
 #ifdef __cplusplus

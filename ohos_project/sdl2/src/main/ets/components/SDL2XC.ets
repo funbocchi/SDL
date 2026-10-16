@@ -1,18 +1,21 @@
-
 @ComponentV2
 export struct SDL2XC {
+  @Require @Param windowId: number;
+
+  getComponentId(): string {
+    return `sdl2_window_${this.windowId}`;
+  }
 
   build() {
-    Stack() {
-      XComponent({
-        type: XComponentType.SURFACE
+    XComponent({
+      type: XComponentType.SURFACE
+    })
+      .id(this.getComponentId())
+      .onAttach(() => {
+        
       })
-        .onAttach((err) => {
+      .onDetach(() => {
 
-        })
-        .onDetach((err) => {
-
-        })
-    }
+      })
   }
 }

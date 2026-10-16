@@ -1,23 +1,26 @@
-import { hilog } from '@kit.PerformanceAnalysisKit';
-import testNapi from 'libentry.so';
+import { SDL2XC, WindowStageManager } from '@roger/sdl2'
 
-@Entry
-@Component
+@Entry({ routeName: "sdl2Page", useSharedStorage: true })
+@ComponentV2
 struct Index {
-  @State message: string = 'Hello World';
+
+  @Local windowId: number = -1;
+
+  aboutToAppear(): void {
+    WindowStageManager.getInstance().setPageName("sdl2Page");
+    let storage: LocalStorage | undefined = this.getUIContext()
+      .getSharedLocalStorage();
+    if (storage !== undefined) {
+      let id: number | undefined = storage.get<number>('sdl_window_id');
+      if (id !== undefined) {
+        this.windowId = id;
+      }
+    }
+  }
 
   build() {
-    Row() {
-      Column() {
-        Text(this.message)
-          .fontSize(50)
-          .fontWeight(FontWeight.Bold)
-          .onClick(() => {
-            hilog.info(0x0000, 'testTag', 'Test NAPI 2 + 3 = %{public}d', testNapi.add(2, 3));
-          })
-      }
-      .width('100%')
+    Stack() {
+      SDL2XC({ windowId: this.windowId })
     }
-    .height('100%')
   }
 }

@@ -30,6 +30,10 @@
 #include <ace/xcomponent/native_interface_xcomponent.h>
 #include <napi/native_api.h>
 
+#include "../../video/ohos/SDL_ohoswindow.h"
+
+static napi_threadsafe_function call_create_window_tsf = NULL;
+
 static SDL_mutex *s_locale_mutex = NULL;
 static char s_locale_lang[4] = { 0 };
 static char s_locale_region[4] = { 0 };
@@ -37,19 +41,41 @@ static char s_locale_region[4] = { 0 };
 /* Napi tools start */
 
 /**
- * @brief Creates a UTF-8 encoded napi string value.
+ * @brief Creates an napi string value, mapping a NULL input to JS null.
+ *
+ * A NULL @p str is a legal input here and yields the JavaScript null
+ * value; only a creation failure returns NULL. Callers passing fields
+ * that must never be null should validate @p str before calling.
  *
  * @param env The NAPI environment handle.
- * @param str A null-terminated C string. Returns NULL if this is NULL.
- * @return napi_value on success, NULL on failure or if str is NULL.
+ * @param str A null-terminated C string, or NULL to produce JS null.
+ * @return napi_value on success, NULL on failure.
  */
 static napi_value Napi_CreateString(napi_env env, const char *str)
 {
     napi_value retval = NULL;
-    if (!str) {
+    if (napi_create_string_utf8(env, str ? str : "", NAPI_AUTO_LENGTH, &retval) != napi_ok) {
         return NULL;
     }
-    if (napi_create_string_utf8(env, str, NAPI_AUTO_LENGTH, &retval) != napi_ok) {
+    return retval;
+}
+
+/**
+ * @brief Creates an napi number value.
+ *
+ * All C numeric types (int32, uint32, float, double) funnel through
+ * the double conversion: integers within +/-2^53 are represented
+ * exactly, which covers the full int32 and uint32 ranges. For int64
+ * values beyond 2^53, use the bigint interfaces instead.
+ *
+ * @param env The NAPI environment handle.
+ * @param v The numeric value.
+ * @return napi_value on success, NULL on failure.
+ */
+static napi_value Napi_CreateNumber(napi_env env, double v)
+{
+    napi_value retval = NULL;
+    if (napi_create_double(env, v, &retval) != napi_ok) {
         return NULL;
     }
     return retval;
@@ -59,7 +85,7 @@ static napi_value Napi_CreateString(napi_env env, const char *str)
  * @brief Creates an empty napi object.
  *
  * @param env The NAPI environment handle.
- * @return napi4value on success, NULL on failure.
+ * @return napi_value on success, NULL on failure.
  */
 static napi_value Napi_CreateObj(napi_env env)
 {
@@ -117,7 +143,104 @@ static napi_value Napi_GetUndefined(napi_env env)
     return retval;
 }
 
+/**
+ * @brief Sets a named property on an object.
+ *
+ * @param env The NAPI environment handle.
+ * @param obj The target object.
+ * @param name The property name.
+ * @param val The property value; NULL (creation failure) fails the call.
+ * @return true on success, false on failure.
+ */
+static SDL_bool Napi_SetNamedProp(napi_env env, napi_value obj, const char *name, napi_value val)
+{
+    return (val != NULL && napi_set_named_property(env, obj, name, val) == napi_ok) ? SDL_TRUE : SDL_FALSE;
+}
+
 /* Napi tool end */
+
+/* ThreadSafe Tools */
+
+static SDL_bool OHOS_CreateThreadsafeFunction(napi_env env, napi_callback_info info, const char *name, napi_threadsafe_function_call_js fn, napi_threadsafe_function *out)
+{
+    size_t argc = 1;
+    napi_value js_cb = NULL;
+    napi_valuetype type = napi_undefined;
+    napi_value work_name = NULL;
+    napi_status status;
+
+    if ((napi_get_cb_info(env, info, &argc, &js_cb, NULL, NULL) != napi_ok) || argc < 1 || js_cb == NULL) {
+        return SDL_FALSE;
+    }
+
+    if (napi_typeof(env, js_cb, &type) != napi_ok || type != napi_function) {
+        return SDL_FALSE;
+    }
+
+    if (*out != NULL) {
+        napi_release_threadsafe_function(*out, napi_tsfn_abort);
+        *out = NULL;
+    }
+    work_name = Napi_CreateString(env, name);
+    if (work_name == NULL) {
+        return SDL_FALSE;
+    }
+
+    status = napi_create_threadsafe_function(env, js_cb, NULL, work_name, 0, 1, NULL, NULL, NULL, fn, out);
+    if (status != napi_ok) {
+        *out = NULL;
+        return SDL_FALSE;
+    }
+
+    return SDL_TRUE;
+}
+
+/* ThreadSafe Tools end */
+
+/* ThreadSafe Methods */
+
+static void TSF_CallCreateWindow(napi_env env, napi_value js_cb, void *context, void *data)
+{
+    OHOSWindowRequestParam *param = NULL;
+    napi_value obj;
+    napi_value undefined;
+
+    param = (OHOSWindowRequestParam *)data;
+    if (param == NULL) {
+        return;
+    }
+
+    if (!(obj = Napi_CreateObj(env)) ||
+        !(undefined = Napi_GetUndefined(env)) ||
+        !(Napi_SetNamedProp(env, obj, "id", Napi_CreateNumber(env, param->id))) ||
+        !(Napi_SetNamedProp(env, obj, "title", Napi_CreateString(env, param->title))) ||
+        !(Napi_SetNamedProp(env, obj, "x", Napi_CreateNumber(env, param->x))) ||
+        !(Napi_SetNamedProp(env, obj, "y", Napi_CreateNumber(env, param->y))) ||
+        !(Napi_SetNamedProp(env, obj, "w", Napi_CreateNumber(env, param->w))) ||
+        !(Napi_SetNamedProp(env, obj, "h", Napi_CreateNumber(env, param->h))) ||
+        !(Napi_SetNamedProp(env, obj, "fullscreen", Napi_CreateBoolean(env, param->fullscreen))) ||
+        !(Napi_SetNamedProp(env, obj, "borderless", Napi_CreateBoolean(env, param->borderless)))) {
+        goto endfunc;
+    }
+
+    napi_call_function(env, undefined, js_cb, 1, &obj, NULL);
+
+endfunc:
+    SDL_free(param);
+    return;
+}
+
+static napi_value OHOS_ThreadSafe_RequestWindowReady(napi_env env, napi_callback_info info)
+{
+    if (!OHOS_CreateThreadsafeFunction(env, info, "R", TSF_CallCreateWindow, &call_create_window_tsf)) {
+        return Napi_GetUndefined(env);
+    }
+    return Napi_GetUndefined(env);
+}
+
+/* ThreadSafe Methods end */
+
+/* Public func */
 
 /**
  * @brief Reads cached locale data and writes it to buf as "lang_country" format.
@@ -157,6 +280,24 @@ int SDL_OHOS_GetLocale(char *buf, size_t buflen)
 
     return 0;
 }
+
+int SDL_OHOS_RequestWindow(OHOSWindowRequestParam *params)
+{
+    int retval = 0;
+    if (params == NULL || call_create_window_tsf == NULL) {
+        retval = SDL_SetError("The parameter is invalid or the tsf has not been initialized.");
+        goto endfunc;
+    }
+
+    if (napi_call_threadsafe_function(call_create_window_tsf, params, napi_tsfn_nonblocking) != napi_ok) {
+        retval = SDL_SetError("The call to create a window using call_create_window_tsf failed");
+    }
+
+endfunc:
+    return retval;
+}
+
+/* Public func end */
 
 /**
  * @brief NAPI callback: receives and caches the language and region codes from the ArkTS side.
@@ -217,6 +358,7 @@ static napi_value OHOS_Napi_RegisterInterface(napi_env env, napi_value exports)
 {
     napi_property_descriptor desc[] = {
         { "updateLocale", NULL, OHOS_Napi_UpdateLocale, NULL, NULL, NULL, napi_default, NULL },
+        { "requestWindowReady", NULL, OHOS_ThreadSafe_RequestWindowReady, NULL, NULL, NULL, napi_default, NULL },
     };
 
     napi_define_properties(env, exports, SDL_arraysize(desc), desc);

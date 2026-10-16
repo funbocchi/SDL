@@ -23,8 +23,8 @@
 #ifndef SDL_OHOSVIDEO_H
 #define SDL_OHOSVIDEO_H
 
-#include <window_manager/oh_display_info.h>
 #include <EGL/egl.h>
+#include <window_manager/oh_display_info.h>
 
 #include "../SDL_sysvideo.h"
 #include "SDL_mutex.h"
@@ -55,6 +55,8 @@ typedef struct
     float y_dpi;
     NativeDisplayManager_Rotation rotation;
 } OHOS_VideoDisplayData;
+
+extern SDL_mutex *ohos_window_mutex;
 
 #endif // SDL_OHOSVIDEO_H
 

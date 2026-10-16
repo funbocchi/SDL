@@ -36,6 +36,7 @@
 
 #include "SDL_ohosmessagebox.h"
 #include "SDL_ohosvideo.h"
+#include "SDL_ohoswindow.h"
 
 #define OHOS_VID_DRIVER_NAME "OHOS"
 
@@ -243,6 +244,8 @@ static SDL_VideoDevice *OHOS_CreateDevice(void)
 
     device->VideoInit = OHOS_VideoInit;
     device->VideoQuit = OHOS_VideoQuit;
+
+    device->CreateSDLWindow = OHOS_CreateSDLWindow;
 
 #ifdef SDL_VIDEO_OPENGL_EGL
 #endif

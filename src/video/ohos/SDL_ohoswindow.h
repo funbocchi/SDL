@@ -18,10 +18,37 @@
      misrepresented as being the original software.
   3. This notice may not be removed or altered from any source distribution.
 */
+#include "../../SDL_internal.h"
 
 #ifndef SDL_OHOSWINDOW_H
 #define SDL_OHOSWINDOW_H
 
-#include "../SDL_sysvideo.h"
+#include <native_window/external_window.h>
 
-#endif //SDL_OHOSWINDOW_H
+#include "../../core/ohos/SDL_ohos.h"
+#include "../SDL_egl_c.h"
+
+typedef struct
+{
+#ifdef SDL_VIDEO_OPENGL_EGL
+    EGLSurface egl_surface;
+    EGLContext egl_context;
+#endif
+    OHNativeWindow *native_window;
+} OHOS_WindowData;
+
+extern int OHOS_CreateSDLWindow(_THIS, SDL_Window *window);
+
+extern int OHOS_CreateSDLWindowFrom(_THIS, SDL_Window *window, const void *data);
+
+extern void OHOS_DestroyWindow(_THIS, SDL_Window *window);
+
+extern void OHOS_SetWindowTitle(SDL_VideoDevice *_this, SDL_Window *window);
+
+extern void OHOS_SetWindowIcon(SDL_VideoDevice *_this, SDL_Window *window, SDL_Surface *icon);
+
+extern void OHOS_SetWindowPosition(SDL_VideoDevice *_this, SDL_Window *window);
+
+extern void OHOS_SetWindowSize(SDL_VideoDevice *_this, SDL_Window *window);
+
+#endif // SDL_OHOSWINDOW_H
