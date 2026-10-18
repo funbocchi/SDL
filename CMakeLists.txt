@@ -1798,7 +1798,7 @@ elseif(UNIX AND NOT APPLE AND NOT RISCOS AND NOT HAIKU AND NOT OHOS)
 elseif(OHOS)
   file(GLOB OHOS_CORE_SOURCES ${SDL2_SOURCE_DIR}/src/core/ohos/*.c)
   list(APPEND SOURCE_FILES ${OHOS_CORE_SOURCES})
-  list(APPEND EXTRA_LIBS ace_napi.z hilog_ndk.z)
+  list(APPEND EXTRA_LIBS ace_napi.z hilog_ndk.z ace_ndk.z)
   
     # SDL_spinlock.c Needs to be compiled in ARM mode.
   # There seems to be no better way currently to set the ARM mode.

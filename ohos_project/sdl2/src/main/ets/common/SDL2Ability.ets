@@ -1,6 +1,6 @@
 import { AbilityConstant, Configuration, UIAbility, Want } from "@kit.AbilityKit"
 import { window } from '@kit.ArkUI'
-import { requestWindowReady, SDLWindowRequest } from "libsdl2.so";
+import { requestWindowReady, SDLWindowRequestParams } from "libsdl2.so";
 import { SDL2LocalManager } from "../manager/SDL2LocaleManager"
 import { WindowStageManager } from "../manager/SDL2WindowStageManager"
 
@@ -16,10 +16,12 @@ export class BaseSDL2Ability extends UIAbility {
     WindowStageManager.getInstance()
       .init(windowStage);
 
-    requestWindowReady((req: SDLWindowRequest): void => {
+    requestWindowReady((req: SDLWindowRequestParams): void => {
       WindowStageManager.getInstance()
         .createNewWindow(req);
     });
+    
+    this.onWindowStageCreateHook();
   }
 
   onWindowStageWillDestroy(windowStage: window.WindowStage): void {
@@ -53,5 +55,9 @@ export class BaseSDL2Ability extends UIAbility {
   }
 
   onConfigurationUpdate(newConfig: Configuration): void {
+  }
+
+  onWindowStageCreateHook(): void {
+
   }
 }

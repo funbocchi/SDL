@@ -40,6 +40,11 @@
 
 #define OHOS_VID_DRIVER_NAME "OHOS"
 
+SDL_mutex *ohos_window_mutex = NULL;
+SDL_sem *ohos_window_sem = NULL;
+
+float density_pixels = 1.0f;
+
 /* Tools */
 static SDL_DisplayOrientation OHOS_RotationToOrientation(NativeDisplayManager_Rotation rotation)
 {
@@ -57,29 +62,6 @@ static SDL_DisplayOrientation OHOS_RotationToOrientation(NativeDisplayManager_Ro
     }
 }
 
-/**
- * @brief Initializes the OHOS video subsystem.
- *
- * This function performs three main tasks:
- * 1. Allocates and attaches device-level private data (OHOS_VideoDeviceData)
- *    to _this->driverdata.
- * 2. Initializes EGL (eglGetDisplay, eglInitialize, eglChooseConfig) when
- *    SDL_VIDEO_OPENGL_EGL is enabled, storing the EGLDisplay and EGLConfig
- *    for later use by GL_CreateContext and GL_SwapWindow.
- * 3. Queries all available physical displays via
- *    OH_NativeDisplayManager_CreateAllDisplays, registers each active display
- *    to SDL2 via SDL_AddVideoDisplay, and fills display-level private data
- *    (OHOS_VideoDisplayData) with DPI, available bounds, rotation, etc.
- *
- * If no displays are available after enumeration, or if EGL initialization
- * fails, all allocated resources are cleaned up and an error is returned.
- *
- * @param _this The video device handle, created by OHOS_CreateDevice.
- * @return 0 on success, -1 on failure with SDL error set.
- *
- * @note Vulkan does not require any initialization in this function.
- *       Vulkan resources are lazily initialized in Vulkan_LoadLibrary.
- */
 static int OHOS_VideoInit(_THIS)
 {
     OHOS_VideoDeviceData *video_device_data = NULL;
@@ -90,6 +72,9 @@ static int OHOS_VideoInit(_THIS)
     NativeDisplayManager_DisplaysInfo *all_displays = NULL;
     NativeDisplayManager_DisplayInfo *dis_info = NULL;
     NativeDisplayManager_ErrorCode error_code;
+
+    OH_NativeDisplayManager_GetDefaultDisplayDensityPixels(&density_pixels);
+
 #ifdef SDL_VIDEO_OPENGL_EGL
     EGLint attribs[] = {
         EGL_SURFACE_TYPE, EGL_WINDOW_BIT, EGL_RED_SIZE, 8, EGL_GREEN_SIZE, 8, EGL_BLUE_SIZE, 8, EGL_ALPHA_SIZE, 8, EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT, EGL_NONE
@@ -187,22 +172,6 @@ static int OHOS_VideoInit(_THIS)
     return 0;
 }
 
-/**
- * @brief Shuts down the OHOS video subsystem.
- *
- * Releases all resources allocated by OHOS_VideoInit in reverse order:
- * 1. Frees each display's private data (OHOS_VideoDisplayData) that was
- *    attached to SDL_VideoDisplay.driverdata during registration.
- * 2. Terminates the EGL connection (eglTerminate) when SDL_VIDEO_OPENGL_EGL
- *    is enabled.
- * 3. Frees the device-level private data (OHOS_VideoDeviceData) and clears
- *    _this->driverdata.
- *
- * @param _this The video device handle.
- *
- * @note This function is safe to call even if VideoInit failed partially,
- *       as it checks for NULL before freeing each resource.
- */
 static void OHOS_VideoQuit(_THIS)
 {
     OHOS_VideoDeviceData *video_device_data = NULL;

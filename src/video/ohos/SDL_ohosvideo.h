@@ -57,6 +57,7 @@ typedef struct
 } OHOS_VideoDisplayData;
 
 extern SDL_mutex *ohos_window_mutex;
+extern float density_pixels;
 
 #endif // SDL_OHOSVIDEO_H
 

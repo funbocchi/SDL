@@ -29,26 +29,37 @@ extern "C" {
 #endif
 
 #include <napi/native_api.h>
+#include <native_window/external_window.h>
 
 #include "SDL_audio.h"
 #include "SDL_rect.h"
 #include "SDL_video.h"
 
-typedef struct
-{
-    Uint32 id;
-    const char *title;
-    int x;
-    int y;
-    int w;
-    int h;
-    SDL_bool fullscreen;
-    SDL_bool borderless;
-} OHOSWindowRequestParam;
+extern napi_value Napi_CreateString(napi_env env, const char *data);
 
-extern int SDL_OHOS_GetLocale(char *buf, size_t buflen);
+extern napi_value Napi_CreateNumber(napi_env env, double data);
 
-extern int SDL_OHOS_RequestWindow(OHOSWindowRequestParam *params);
+extern napi_value Napi_CreateBoolean(napi_env env, SDL_bool data);
+
+extern napi_value Napi_CreateObj(napi_env env);
+
+extern napi_value Napi_CreateNull(napi_env env);
+
+extern napi_value Napi_CreateUndefined(napi_env env);
+
+extern SDL_bool Napi_SetNamedProperty(napi_env env, napi_value obj, const char *name, napi_value data);
+
+extern SDL_bool Napi_CheckTSFCallbackArg(napi_env env, napi_callback_info info, napi_value *cb);
+
+extern SDL_bool Napi_CreateTSF(napi_env env, napi_value cb, const char *name, napi_threadsafe_function_call_js js_cb, napi_threadsafe_function *tsf);
+
+extern SDL_bool Napi_CallFunction(napi_env env, napi_value func, size_t argc, const napi_value *argv);
+
+extern SDL_bool Napi_CallThreadSafeFunction(napi_threadsafe_function tsf, void *data);
+
+extern void Napi_ClearPending(napi_env env, const char *context);
+
+extern void Napi_ThrowError(napi_env env, napi_status status, const char *data);
 
 /* Ends C function definitions when using C++ */
 #ifdef __cplusplus

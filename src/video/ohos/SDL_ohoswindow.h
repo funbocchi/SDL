@@ -37,6 +37,8 @@ typedef struct
     OHNativeWindow *native_window;
 } OHOS_WindowData;
 
+extern napi_value OHOS_ThreadSafe_RegisterCallCreateWindow(napi_env env, napi_callback_info info);
+
 extern int OHOS_CreateSDLWindow(_THIS, SDL_Window *window);
 
 extern int OHOS_CreateSDLWindowFrom(_THIS, SDL_Window *window, const void *data);
@@ -50,5 +52,9 @@ extern void OHOS_SetWindowIcon(SDL_VideoDevice *_this, SDL_Window *window, SDL_S
 extern void OHOS_SetWindowPosition(SDL_VideoDevice *_this, SDL_Window *window);
 
 extern void OHOS_SetWindowSize(SDL_VideoDevice *_this, SDL_Window *window);
+
+extern napi_value OHOS_NodeContent_BindNode(napi_env env, napi_callback_info info);
+
+extern napi_value OHOS_NodeContent_UnbindNode(napi_env env, napi_callback_info info);
 
 #endif // SDL_OHOSWINDOW_H
