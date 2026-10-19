@@ -2,15 +2,12 @@ import { FrameNode } from "@kit.ArkUI";
 export interface SDLWindowRequestParams {
   id: number;
   title: string;
-  xMode: number,
-  yMode: number,
   x: number;
+  px_x_force: boolean;
   y: number;
+  px_y_force: boolean;
   width: number;
   height: number;
-  displayIndex: number,
-  fullscreen: boolean;
-  fullscreenDestop: boolean;
   borderless: boolean;
   hidden: boolean;
   resizable: boolean;

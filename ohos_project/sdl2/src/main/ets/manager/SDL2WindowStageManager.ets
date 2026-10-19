@@ -1,6 +1,8 @@
-import { window } from '@kit.ArkUI'
+import { display, window } from '@kit.ArkUI'
 import { BusinessError } from '@kit.BasicServicesKit'
 import { SDLWindowRequestParams } from 'libsdl2.so'
+import { OHOSPositionMode } from '../common/enums/OHOSPositionMode'
+import { common } from '@kit.AbilityKit';
 
 class WindowTaskQueue {
   private chains: Map<number, Promise<void>> = new Map();
@@ -33,6 +35,7 @@ export class WindowStageManager {
 
   private mainWindowLoaded: boolean = false;
   private windowList: Map<number, window.Window> = new Map<number, window.Window>();
+
   private queue: WindowTaskQueue = new WindowTaskQueue();
 
   private constructor() {
@@ -47,6 +50,20 @@ export class WindowStageManager {
 
   private getTitle(value: number): string {
     return `sdl_window_${value}`;
+  }
+
+  private queryDisplay(displayId: number): display.Display | null {
+    try {
+      return display.getDisplayByIdSync(displayId);
+    } catch (err) {
+      console.error(`invalid displayId: ${displayId}, code: ${err.code}, fallback to default`);
+      try {
+        return display.getDefaultDisplaySync();
+      } catch (e) {
+        console.error(`getDefaultDisplaySync failed. code: ${e.code}`);
+        return null;
+      }
+    }
   }
 
   public init(windowStage: window.WindowStage): void {
@@ -64,84 +81,138 @@ export class WindowStageManager {
   private buildStorageByReq(req: SDLWindowRequestParams): LocalStorage {
     let storage: LocalStorage = new LocalStorage();
     storage.setOrCreate('sdl_window_id', req.id);
-    storage.setOrCreate('sdl_window_x', req.x);
-    storage.setOrCreate('sdl_window_y', req.y);
-    storage.setOrCreate('sdl_window_width', req.width);
-    storage.setOrCreate('sdl_window_height', req.height);
     return storage;
   }
 
-  /* SetOption */
-
-
-  public setWindowSize(id: number, width: number, height: number): void {
-    this.queue.enqueue(id, async () => {
-      const win = this.windowList.get(id);
-      if (!win) {
-        return;
-      }
-      try {
-        await win.resize(width, height);
-      } catch (err) {
-      }
-    });
-  }
-
-  public setWindowPosition(id: number, x: number, y: number): void {
-    this.queue.enqueue(id, async () => {
-      const win = this.windowList.get(id);
-      if (!win) {
-        return;
-      }
-      try {
-        await win.moveWindowTo(x, y);
-      } catch (err) {
-      }
-    })
-  }
-
-  public createNewWindow(req: SDLWindowRequestParams): void {
+  private checkWindowManagerReady(): void {
     if (this.windowStage === undefined) {
-      console.error('WindowStageManager: windowStage is not initialized.');
-      return;
+      throw new Error("windowStage not initialized");
     }
     if (this.pageName === "") {
-      console.error('WindowStageManager: pageName is not initialzed.');
-      return;
+      throw new Error("pageName not initialized");
     }
+  }
 
-    let storage = this.buildStorageByReq(req);
-    if (!this.mainWindowLoaded) {
-      try {
-        this.windowStage.loadContentByName(this.pageName, storage)
-          .then(() => {
-            this.mainWindowLoaded = true;
-          })
-          .catch((err: BusinessError) => {
-            console.error(`Failed to load content. Cause code: ${err.code}, message: ${err.message}`);
-          })
-      } catch (error) {
-        // TODO:
-      }
-    } else {
-      try {
-        let option: window.SubWindowOptions = {
+  public async createNewWindow(req: SDLWindowRequestParams): Promise<void> {
+    try {
+      this.checkWindowManagerReady();
+
+      const storage = this.buildStorageByReq(req);
+
+      let win: window.Window;
+
+      if (this.mainWindowLoaded) {
+        let options: window.SubWindowOptions = {
           title: req.title,
-          decorEnabled: false
+          decorEnabled: !req.borderless
         }
-        this.windowStage.createSubWindowWithOptions(this.getTitle(req.id), option)
-          .then((win: window.Window) => {
-            win.loadContentByName(this.pageName, storage)
-              .then(() => {
-              })
-              .catch(() => {
-              });
-          })
-          .catch(() => {
-
-          });
-      } catch (error) {
+        win = await this.windowStage!.createSubWindowWithOptions(this.getTitle(req.id), options);
+        await win.loadContentByName(this.pageName, storage);
+        this.windowList.set(req.id, win);
+      } else {
+        await this.windowStage!.loadContentByName(this.pageName, storage);
+        this.mainWindowLoaded = true;
+        win = await this.windowStage!.getMainWindow();
+        await win.setWindowTitle(req.title);
+        win.setWindowDecorVisible(!req.borderless);
+        this.windowList.set(req.id, win);
       }
+
+      await win.setResizeByDragEnabled(req.resizable);
+
+      await win.showWindow();
+
+      let w: number = (req.allowHighDPI) ? win.getUIContext()
+        .vp2px(req.width) : req.width;
+      let h: number = (req.allowHighDPI) ? win.getUIContext()
+        .vp2px(req.height) : req.height;
+      await this.setWindowSize(req.id, w, h);
+
+      let x: number = (req.px_x_force || !req.allowHighDPI) ? req.x : (win.getUIContext()
+        .vp2px(req.x));
+      let y: number = (req.px_y_force || !req.allowHighDPI) ? req.y : (win.getUIContext()
+        .vp2px(req.y));
+      await this.setWindowPos(req.id, x, y);
+
+      await ((req.hidden) ? this.minimizeWindow(req.id) : this.showWindow(req.id));
+
+    } catch (err) {
+      const e = err as Error;
+      console.error(`createNewWindow(${req.id}) failed: ${e.message}`);
+    }
+  }
+
+  //
+  private async setWindowSize(id: number, w: number, h: number): Promise<void> {
+    try {
+      let win = this.windowList.get(id)!;
+      h += (win.getWindowDecorVisible()) ? win.getUIContext()
+        .vp2px(win.getWindowDecorHeight()) : 0;
+      await win.resize(w, h);
+    } catch (err) {
+    }
+  }
+  //
+  private async setWindowPos(id: number, x: number, y: number): Promise<void> {
+    try {
+      let win = this.windowList.get(id)!;
+      y -= (win.getWindowDecorVisible()) ? win.getUIContext()
+        .vp2px(win.getWindowDecorHeight()) : 0;
+      await win.moveWindowToGlobalDisplay(x, y);
+    } catch (err) {
+    }
+  }
+  //
+  private async showWindow(id: number): Promise<void> {
+    try {
+      let win = this.windowList.get(id)!;
+      await win.showWindow();
+    } catch (err) {
+    }
+  }
+  //
+  public async setWindowFullscreen(id: number, fullscreen: boolean): Promise<void> {
+    try {
+      let win = this.windowList.get(id)!;
+      if (fullscreen) {
+        await win.maximize(window.MaximizePresentation.ENTER_IMMERSIVE_DISABLE_TITLE_AND_DOCK_HOVER);
+      } else {
+        await win.recover();
+      }
+    } catch (err) {
+    }
+  }
+  //
+  private async maximizeWindow(id: number): Promise<void> {
+    try {
+      let win = this.windowList.get(id)!;
+      await win.maximize(window.MaximizePresentation.EXIT_IMMERSIVE);
+    } catch (err) {
+    }
+  }
+  //
+  private async minimizeWindow(id: number): Promise<void> {
+    try {
+      let win = this.windowList.get(id)!;
+      await win.minimize();
+    } catch (err) {
+    }
+  }
+  //
+  private async setWindowResizable(id: number, resizable: boolean): Promise<void> {
+    try {
+      let win = this.windowList.get(id)!;
+      await win.setResizeByDragEnabled(resizable);
+    } catch (err) {
+    }
+  }
+  //
+  private async setWindowBordered(id: number, bordered: boolean, w: number, h: number): Promise<void> {
+    try {
+      let win = this.windowList.get(id)!;
+      win.setWindowDecorVisible(bordered);
+      await this.setWindowSize(id, w, h);
+    } catch (err) {
     }
   }
 }

@@ -39,9 +39,9 @@ typedef struct
 
 extern napi_value OHOS_ThreadSafe_RegisterCallCreateWindow(napi_env env, napi_callback_info info);
 
-extern int OHOS_CreateSDLWindow(_THIS, SDL_Window *window);
+extern int OHOS_CreateWindow(_THIS, SDL_Window *window);
 
-extern int OHOS_CreateSDLWindowFrom(_THIS, SDL_Window *window, const void *data);
+extern int OHOS_CreateWindowFrom(_THIS, SDL_Window *window, const void *data);
 
 extern void OHOS_DestroyWindow(_THIS, SDL_Window *window);
 
@@ -56,5 +56,9 @@ extern void OHOS_SetWindowSize(SDL_VideoDevice *_this, SDL_Window *window);
 extern napi_value OHOS_NodeContent_BindNode(napi_env env, napi_callback_info info);
 
 extern napi_value OHOS_NodeContent_UnbindNode(napi_env env, napi_callback_info info);
+
+extern void OHOS_ShowWindow(_THIS, SDL_Window *window);
+
+extern void OHOS_HideWindow(_THIS, SDL_Window *window);
 
 #endif // SDL_OHOSWINDOW_H

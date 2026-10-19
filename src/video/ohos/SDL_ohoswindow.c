@@ -25,8 +25,10 @@
 
 #include <ace/xcomponent/native_interface_xcomponent.h>
 #include <arkui/native_node_napi.h>
+#include <native_window/external_window.h>
 #include <window_manager/oh_display_info.h>
 #include <window_manager/oh_display_manager.h>
+#include <window_manager/oh_window_comm.h>
 
 #include "../../core/ohos/SDL_ohos.h"
 #include "SDL_ohosvideo.h"
@@ -35,33 +37,32 @@
 
 typedef enum
 {
-    OHOS_POS_NORMAL = 0,
-    OHOS_POS_CENTERED = 1,
-    OHOS_POS_UNDEFINED = 2
-} OHOS_PositionMode;
+    kNormalX,
+    kNormalY,
+    kCenteredX,
+    kCenteredY,
+    kUndefinedX,
+    kUndefinedY
+} OHOSWindowPosMode;
 
 typedef struct
 {
     Uint32 id;
     const char *title;
 
-    OHOS_PositionMode x_mode;
-    OHOS_PositionMode y_mode;
     int x;
+    SDL_bool px_x_force;
     int y;
+    SDL_bool px_y_force;
 
     int w;
     int h;
 
-    Uint32 display_index;
-
-    SDL_bool fullscreen;
-    SDL_bool fullscreen_desktop;
     SDL_bool borderless;
     SDL_bool hidden;
     SDL_bool resizable;
     SDL_bool allow_highdpi;
-} OHOS_RequestWindowContext;
+} OHOS_WindowRequestContext;
 
 typedef struct
 {
@@ -78,13 +79,36 @@ typedef struct
     SDL_bool posted;
 } OHOS_CreateContext;
 
-static SDL_mutex *g_ctx_lock = NULL;
-static OHOS_CreateContext *g_ctx = NULL;
+static SDL_mutex *ohos_window_mutex = NULL;
+static OHOS_CreateContext *g_window_context = NULL;
+
 static napi_threadsafe_function call_create_window_tsf = NULL;
+
+static float OHOS_Tool_GetDensityByDisplayId(Uint32 id)
+{
+    NativeDisplayManager_DisplayInfo *info = NULL;
+    NativeDisplayManager_ErrorCode ret;
+    float density_pixels;
+
+    ret = OH_NativeDisplayManager_CreateDisplayById(id, &info);
+    if (ret != DISPLAY_MANAGER_OK || info == NULL) {
+        return 1.0f;
+    }
+    density_pixels = info->densityPixels;
+    OH_NativeDisplayManager_DestroyDisplay(&info);
+    return density_pixels;
+}
+
+static int OHOS_Tool_GetPX(Uint32 id, int value)
+{
+    float density = OHOS_Tool_GetDensityByDisplayId(id);
+
+    return (int)roundf((float)value * density);
+}
 
 static void TSF_CallCreateWindow(napi_env env, napi_value cb, void *context, void *data)
 {
-    OHOS_RequestWindowContext *ctx = (OHOS_RequestWindowContext *)data;
+    OHOS_WindowRequestContext *ctx = (OHOS_WindowRequestContext *)data;
     napi_value obj = NULL;
     napi_value undefined = NULL;
 
@@ -96,15 +120,10 @@ static void TSF_CallCreateWindow(napi_env env, napi_value cb, void *context, voi
         !(undefined = Napi_CreateUndefined(env)) ||
         (Napi_SetNamedProperty(env, obj, "id", Napi_CreateNumber(env, ctx->id)) != SDL_TRUE) ||
         (Napi_SetNamedProperty(env, obj, "title", Napi_CreateString(env, ctx->title)) != SDL_TRUE) ||
-        (Napi_SetNamedProperty(env, obj, "xMode", Napi_CreateNumber(env, (double)ctx->x_mode)) != SDL_TRUE) ||
-        (Napi_SetNamedProperty(env, obj, "yMode", Napi_CreateNumber(env, (double)ctx->y_mode)) != SDL_TRUE) ||
         (Napi_SetNamedProperty(env, obj, "x", Napi_CreateNumber(env, ctx->x)) != SDL_TRUE) ||
         (Napi_SetNamedProperty(env, obj, "y", Napi_CreateNumber(env, ctx->y)) != SDL_TRUE) ||
         (Napi_SetNamedProperty(env, obj, "w", Napi_CreateNumber(env, ctx->w)) != SDL_TRUE) ||
         (Napi_SetNamedProperty(env, obj, "h", Napi_CreateNumber(env, ctx->h)) != SDL_TRUE) ||
-        (Napi_SetNamedProperty(env, obj, "displayIndex", Napi_CreateNumber(env, ctx->display_index)) != SDL_TRUE) ||
-        (Napi_SetNamedProperty(env, obj, "fullscreen", Napi_CreateBoolean(env, ctx->fullscreen)) != SDL_TRUE) ||
-        (Napi_SetNamedProperty(env, obj, "fullscreenDesktop", Napi_CreateBoolean(env, ctx->fullscreen_desktop)) != SDL_TRUE) ||
         (Napi_SetNamedProperty(env, obj, "borderless", Napi_CreateBoolean(env, ctx->borderless)) != SDL_TRUE) ||
         (Napi_SetNamedProperty(env, obj, "hidden", Napi_CreateBoolean(env, ctx->hidden)) != SDL_TRUE) ||
         (Napi_SetNamedProperty(env, obj, "resizable", Napi_CreateBoolean(env, ctx->resizable)) != SDL_TRUE) ||
@@ -139,20 +158,134 @@ napi_value OHOS_ThreadSafe_RegisterCallCreateWindow(napi_env env, napi_callback_
     return Napi_CreateBoolean(env, SDL_TRUE);
 }
 
-static int SDL_OHOS_RequestWindow(OHOS_RequestWindowContext *data)
+static int SDL_OHOS_RequestWindow(OHOS_WindowRequestContext *data)
 {
     return Napi_CallThreadSafeFunction(call_create_window_tsf, data);
 }
 
-int OHOS_CreateSDLWindow(SDL_VideoDevice *_this, SDL_Window *window)
+static int OHOS_Tool_QueuePOSValue(Uint32 id, OHOSWindowPosMode mode)
 {
-    OHOS_WindowData *data;
-    OHOS_RequestWindowContext *params;
+    NativeDisplayManager_SourceMode source_mode;
+    NativeDisplayManager_ErrorCode err_code;
+    WindowManager_WindowProperties window_properties;
+    int pos_x_value;
+    int pos_y_value;
+    int pos_value;
+
+    err_code = OH_NativeDisplayManager_GetDisplaySourceMode(id, &source_mode);
+    if (err_code != DISPLAY_MANAGER_OK) {
+        pos_value = 0;
+        goto endfunc;
+    }
+
+    if (source_mode != DISPLAY_SOURCE_MODE_MAIN && source_mode != DISPLAY_SOURCE_MODE_EXTEND) {
+        pos_value = 0;
+        goto endfunc;
+    }
+
+    err_code = OH_NativeDisplayManager_GetDisplayPosition(id, &pos_x_value, &pos_y_value);
+    if (err_code != DISPLAY_MANAGER_OK) {
+        pos_value = 0;
+        goto endfunc;
+    }
+
+    if (mode == kUndefinedX) {
+        pos_value = pos_x_value;
+        goto endfunc;
+    } else if (mode == kUndefinedY) {
+        pos_value = pos_y_value;
+        goto endfunc;
+    }
+
+    if (OH_WindowManager_GetWindowProperties(id, &window_properties) != OK) {
+        pos_value = 0;
+        goto endfunc;
+    }
+
+    if (mode == kCenteredX) {
+        pos_value = pos_x_value + window_properties.windowRect.width / 2;
+    } else if (mode == kCenteredY) {
+        pos_value = pos_y_value + window_properties.windowRect.height / 2;
+    } else {
+        pos_value = 0;
+    }
+
+endfunc:
+    return pos_value;
+}
+
+static int OHOS_Tool_ParseWindowRequestContext(SDL_Window *window, OHOS_WindowRequestContext *context)
+{
     int retval = 0;
-    float density = 0.0f;
+    int id = 0;
+    OHOSWindowPosMode mode;
+
+    context->title = SDL_strdup(window->title ? window->title : "");
+    if (!context->title) {
+        retval = SDL_OutOfMemory();
+        goto endfunc;
+    }
+
+    context->allow_highdpi = (window->flags & SDL_WINDOW_ALLOW_HIGHDPI) ? SDL_TRUE : SDL_FALSE;
+
+    context->id = window->id;
+
+    context->w = window->w;
+    context->h = window->h;
+
+    if (SDL_WINDOWPOS_ISCENTERED(window->x)) {
+        id = window->x & ~SDL_WINDOWPOS_CENTERED_MASK;
+        mode = kCenteredX;
+        context->x = OHOS_Tool_QueuePOSValue(id, mode) - ((context->allow_highdpi == SDL_TRUE) ? OHOS_Tool_GetPX(id, window->w) : window->w) / 2;
+        context->px_x_force = SDL_TRUE;
+    } else if (SDL_WINDOWPOS_ISUNDEFINED(window->x)) {
+        id = window->x & ~SDL_WINDOWPOS_UNDEFINED_MASK;
+        mode = kUndefinedX;
+        context->x = OHOS_Tool_QueuePOSValue(id, mode);
+        context->px_x_force = SDL_TRUE;
+    } else {
+        mode = kNormalX;
+        id = 0;
+        context->x = window->x;
+        context->px_x_force = SDL_FALSE;
+    }
+
+    if (SDL_WINDOWPOS_ISCENTERED(window->y)) {
+        id = window->y & ~SDL_WINDOWPOS_CENTERED_MASK;
+        mode = kCenteredY;
+        context->y = OHOS_Tool_QueuePOSValue(id, mode) - ((context->allow_highdpi == SDL_TRUE) ? OHOS_Tool_GetPX(id, window->h) : window->h) / 2;
+        context->px_y_force = SDL_TRUE;
+    } else if (SDL_WINDOWPOS_ISUNDEFINED(window->y)) {
+        id = window->y & ~SDL_WINDOWPOS_UNDEFINED_MASK;
+        mode = kUndefinedY;
+        context->y = OHOS_Tool_QueuePOSValue(id, mode);
+        context->px_y_force = SDL_TRUE;
+    } else {
+        mode = kNormalY;
+        id = 0;
+        context->y = window->y;
+        context->px_y_force = SDL_FALSE;
+    }
+
+    context->borderless = (window->flags & SDL_WINDOW_BORDERLESS) ? SDL_TRUE : SDL_FALSE;
+    context->resizable = (window->flags & SDL_WINDOW_RESIZABLE) ? SDL_TRUE : SDL_FALSE;
+
+endfunc:
+    return retval;
+}
+
+int OHOS_CreateWindow(_THIS, SDL_Window *window)
+{
+    OHOS_WindowData *data = NULL;
+    OHOS_WindowRequestContext *request_context = NULL;
+    int retval = 0;
 
     if (!ohos_window_mutex) {
         ohos_window_mutex = SDL_CreateMutex();
+        if (!ohos_window_mutex) {
+            retval = SDL_OutOfMemory();
+            goto error;
+        }
     }
 
     SDL_LockMutex(ohos_window_mutex);
@@ -163,79 +296,31 @@ int OHOS_CreateSDLWindow(SDL_VideoDevice *_this, SDL_Window *window)
         goto endfunc;
     }
 
-    params = (OHOS_RequestWindowContext *)SDL_calloc(1, sizeof(OHOS_RequestWindowContext));
-    if (!params) {
-        retval = SDL_OutOfMemory();
-        SDL_free(data);
-        goto endfunc;
-    }
-
-    g_ctx = (OHOS_CreateContext *)SDL_calloc(1, sizeof(OHOS_CreateContext));
-    if (!g_ctx) {
-        retval = SDL_OutOfMemory();
-        SDL_free(data);
-        SDL_free(params);
-        goto endfunc;
-    }
-    g_ctx->sem = SDL_CreateSemaphore(0);
-    if (!g_ctx->sem) {
-        retval = SDL_OutOfMemory();
-        SDL_free(g_ctx);
-        g_ctx = NULL;
-        SDL_free(data);
-        SDL_free(params);
-        goto endfunc;
-    }
-
-    params->title = SDL_strdup(window->title ? window->title : "");
-    if (!params->title) {
-        SDL_free(params);
-        SDL_free(data);
+    request_context = (OHOS_WindowRequestContext *)SDL_calloc(1, sizeof(OHOS_WindowRequestContext));
+    if (!request_context) {
         retval = SDL_OutOfMemory();
         goto endfunc;
     }
 
-    params->id = window->id;
-
-    if (SDL_WINDOWPOS_ISCENTERED(window->x)) {
-        params->x_mode = OHOS_POS_CENTERED;
-        params->display_index = window->x & ~SDL_WINDOWPOS_CENTERED_MASK;
-        params->x = 0;
-    } else if (SDL_WINDOWPOS_ISUNDEFINED(window->x)) {
-        params->x_mode = OHOS_POS_UNDEFINED;
-        params->display_index = window->x & ~SDL_WINDOWPOS_UNDEFINED_MASK;
-        params->x = 0;
-    } else {
-        params->x_mode = OHOS_POS_NORMAL;
-        params->display_index = 0;
-        params->x = window->x;
+    g_window_context = (OHOS_CreateContext *)SDL_calloc(1, sizeof(OHOS_CreateContext));
+    if (!g_window_context) {
+        retval = SDL_OutOfMemory();
+        goto endfunc;
     }
-    if (SDL_WINDOWPOS_ISCENTERED(window->y)) {
-        params->y_mode = OHOS_POS_CENTERED;
-        params->display_index = window->y & ~SDL_WINDOWPOS_CENTERED_MASK;
-        params->y = 0;
-    } else if (SDL_WINDOWPOS_ISUNDEFINED(window->y)) {
-        params->y_mode = OHOS_POS_UNDEFINED;
-        params->display_index = window->y & ~SDL_WINDOWPOS_UNDEFINED_MASK;
-        params->y = 0;
-    } else {
-        params->y_mode = OHOS_POS_NORMAL;
-        params->display_index = 0;
-        params->y = window->y;
+    g_window_context->sem = SDL_CreateSemaphore(0);
+    if (!g_window_context->sem) {
+        retval = SDL_OutOfMemory();
+        goto endfunc;
     }
 
-    params->w = window->w;
-    params->h = window->h;
+    retval = OHOS_Tool_ParseWindowRequestContext(window, request_context);
+    if (retval != 0) {
+        goto endfunc;
+    }
 
-    params->fullscreen = (window->flags & SDL_WINDOW_FULLSCREEN) ? SDL_TRUE : SDL_FALSE;
-    params->fullscreen_desktop = (window->flags & SDL_WINDOW_FULLSCREEN_DESKTOP) ? SDL_TRUE : SDL_FALSE;
-    params->borderless = (window->flags & SDL_WINDOW_BORDERLESS) ? SDL_TRUE : SDL_FALSE;
-    params->allow_highdpi = (window->flags & SDL_WINDOW_ALLOW_HIGHDPI) ? SDL_TRUE : SDL_FALSE;
-    params->resizable = (window->flags & SDL_WINDOW_RESIZABLE) ? SDL_TRUE : SDL_FALSE;
+    retval = SDL_OHOS_RequestWindow(request_context);
 
-    retval = SDL_OHOS_RequestWindow(params);
-
-    if (SDL_SemWaitTimeout(g_ctx->sem, 5000) != 0) {
+    if (SDL_SemWaitTimeout(g_window_context->sem, 5000) != 0) {
         retval = SDL_SetError("OHOS Window creation timed out");
         goto endfunc;
     }
@@ -244,7 +329,25 @@ int OHOS_CreateSDLWindow(SDL_VideoDevice *_this, SDL_Window *window)
 #endif
 
 endfunc:
+    if (data) {
+        SDL_free(data);
+        data = NULL;
+    }
+    if (request_context) {
+        if (request_context->title) {
+            SDL_free(request_context->title);
+        }
+        SDL_free(request_context);
+        request_context = NULL;
+    }
+    if (g_window_context) {
+        if (g_window_context->sem) {
+            SDL_DestroySemaphore(g_window_context->sem);
+        }
+        SDL_free(g_window_context);
+    }
     SDL_UnlockMutex(ohos_window_mutex);
+error:
     return retval;
 }
 
@@ -280,17 +383,21 @@ napi_value OHOS_NodeContent_BindNode(napi_env env, napi_callback_info info)
 
 napi_value OHOS_NodeContent_UnbindNode(napi_env env, napi_callback_info info) {}
 
-int OHOS_CreateSDLWindowFrom(SDL_VideoDevice *_this, SDL_Window *window, const void *data) {}
+int OHOS_CreateSDLWindowFrom(_THIS, SDL_Window *window, const void *data) {}
 
-void OHOS_DestroyWindow(SDL_VideoDevice *_this, SDL_Window *window) {}
+void OHOS_DestroyWindow(_THIS, SDL_Window *window) {}
 
-void OHOS_SetWindowTitle(SDL_VideoDevice *_this, SDL_Window *window) {}
+void OHOS_SetWindowTitle(_THIS, SDL_Window *window) {}
 
-void OHOS_SetWindowIcon(SDL_VideoDevice *_this, SDL_Window *window, SDL_Surface *icon) {}
+void OHOS_SetWindowIcon(_THIS, SDL_Window *window, SDL_Surface *icon) {}
 
-void OHOS_SetWindowPosition(SDL_VideoDevice *_this, SDL_Window *window) {}
+void OHOS_SetWindowPosition(_THIS, SDL_Window *window) {}
 
-void OHOS_SetWindowSize(SDL_VideoDevice *_this, SDL_Window *window) {}
+void OHOS_SetWindowSize(_THIS, SDL_Window *window) {}
+
+int OHOS_GetWindowBordersSize(_THIS, SDL_Window *window)
+{
+}
 
 #endif
 /* vi: set ts=4 sw=4 expandtab: */

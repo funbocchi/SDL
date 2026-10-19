@@ -1848,7 +1848,7 @@ elseif(OHOS)
     set(SDL_VIDEO_DRIVER_OHOS 1)
     file(GLOB OHOS_VIDEO_SOURCES ${SDL2_SOURCE_DIR}/src/video/ohos/*.c)
     list(APPEND SOURCE_FILES ${OHOS_VIDEO_SOURCES})
-    list(APPEND EXTRA_LIBS native_display_manager)
+    list(APPEND EXTRA_LIBS native_display_manager native_window_manager)
     set(HAVE_SDL_VIDEO TRUE)
 
     if(SDL_OPENGLES)
