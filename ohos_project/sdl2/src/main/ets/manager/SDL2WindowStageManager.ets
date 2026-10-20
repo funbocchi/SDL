@@ -1,7 +1,6 @@
 import { display, window } from '@kit.ArkUI'
 import { BusinessError } from '@kit.BasicServicesKit'
 import { SDLWindowRequestParams } from 'libsdl2.so'
-import { OHOSPositionMode } from '../common/enums/OHOSPositionMode'
 import { common } from '@kit.AbilityKit';
 
 class WindowTaskQueue {
@@ -80,7 +79,7 @@ export class WindowStageManager {
 
   private buildStorageByReq(req: SDLWindowRequestParams): LocalStorage {
     let storage: LocalStorage = new LocalStorage();
-    storage.setOrCreate('sdl_window_id', req.id);
+    storage.setOrCreate('sdl2_window_id', req.id);
     return storage;
   }
 
@@ -120,7 +119,11 @@ export class WindowStageManager {
 
       await win.setResizeByDragEnabled(req.resizable);
 
-      await win.showWindow();
+      let x: number = (req.px_x_force || !req.allowHighDPI) ? req.x : (win.getUIContext()
+        .vp2px(req.x));
+      let y: number = (req.px_y_force || !req.allowHighDPI) ? req.y : (win.getUIContext()
+        .vp2px(req.y));
+      await this.setWindowPos(req.id, x, y);
 
       let w: number = (req.allowHighDPI) ? win.getUIContext()
         .vp2px(req.width) : req.width;
@@ -128,13 +131,9 @@ export class WindowStageManager {
         .vp2px(req.height) : req.height;
       await this.setWindowSize(req.id, w, h);
 
-      let x: number = (req.px_x_force || !req.allowHighDPI) ? req.x : (win.getUIContext()
-        .vp2px(req.x));
-      let y: number = (req.px_y_force || !req.allowHighDPI) ? req.y : (win.getUIContext()
-        .vp2px(req.y));
-      await this.setWindowPos(req.id, x, y);
-
-      await ((req.hidden) ? this.minimizeWindow(req.id) : this.showWindow(req.id));
+      if (!req.hidden) {
+        this.showWindow(req.id);
+      }
 
     } catch (err) {
       const e = err as Error;
@@ -143,14 +142,15 @@ export class WindowStageManager {
   }
 
   //
-  private async setWindowSize(id: number, w: number, h: number): Promise<void> {
+  public async setWindowTitle(id: number, title: string): Promise<void> {
     try {
       let win = this.windowList.get(id)!;
-      h += (win.getWindowDecorVisible()) ? win.getUIContext()
-        .vp2px(win.getWindowDecorHeight()) : 0;
-      await win.resize(w, h);
+      await win.setWindowTitle(title);
     } catch (err) {
     }
+  }
+  //
+  public async setWindowIcon(id: number): Promise<void> {
   }
   //
   private async setWindowPos(id: number, x: number, y: number): Promise<void> {
@@ -163,12 +163,29 @@ export class WindowStageManager {
     }
   }
   //
-  private async showWindow(id: number): Promise<void> {
+  private async setWindowSize(id: number, w: number, h: number): Promise<void> {
     try {
       let win = this.windowList.get(id)!;
-      await win.showWindow();
+      h += (win.getWindowDecorVisible()) ? win.getUIContext()
+        .vp2px(win.getWindowDecorHeight()) : 0;
+      await win.resize(w, h);
     } catch (err) {
     }
+  }
+  //
+  public async setWindowMinimumSize(id: number, w: number, h: number): Promise<void> {
+  }
+  //
+  public async setWidnowMaximumSize(id: number, w: number, h: number): Promise<void> {
+  }
+  //
+  public async setWindowOpacity(id: number, opacity: number): Promise<void> {
+  }
+  //
+  public async setWindowModalFor(id: number, parent_id: number): Promise<void> {
+  }
+  //
+  public async setWindowInputFocus(id: number): Promise<void> {
   }
   //
   public async setWindowFullscreen(id: number, fullscreen: boolean): Promise<void> {
@@ -183,7 +200,27 @@ export class WindowStageManager {
     }
   }
   //
-  private async maximizeWindow(id: number): Promise<void> {
+  public async showWindow(id: number): Promise<void> {
+    try {
+      let win = this.windowList.get(id)!;
+      await win.showWindow();
+      await win.restore();
+    } catch (err) {
+      throw new Error("EEE");
+    }
+  }
+  //
+  public async hideWindow(id: number): Promise<void> {
+    try {
+      await this.minimizeWindow(id);
+    } catch (err) {
+    }
+  }
+  //
+  public async raiseWindow(id: number): Promise<void> {
+  }
+  //
+  public async maximizeWindow(id: number): Promise<void> {
     try {
       let win = this.windowList.get(id)!;
       await win.maximize(window.MaximizePresentation.EXIT_IMMERSIVE);
@@ -191,10 +228,22 @@ export class WindowStageManager {
     }
   }
   //
-  private async minimizeWindow(id: number): Promise<void> {
+  public async minimizeWindow(id: number): Promise<void> {
     try {
       let win = this.windowList.get(id)!;
       await win.minimize();
+    } catch (err) {
+    }
+  }
+  //
+  public async restoreWindow(id: number): Promise<void> {
+  }
+  //
+  private async setWindowBordered(id: number, bordered: boolean, w: number, h: number): Promise<void> {
+    try {
+      let win = this.windowList.get(id)!;
+      win.setWindowDecorVisible(bordered);
+      await this.setWindowSize(id, w, h);
     } catch (err) {
     }
   }
@@ -203,15 +252,6 @@ export class WindowStageManager {
     try {
       let win = this.windowList.get(id)!;
       await win.setResizeByDragEnabled(resizable);
-    } catch (err) {
-    }
-  }
-  //
-  private async setWindowBordered(id: number, bordered: boolean, w: number, h: number): Promise<void> {
-    try {
-      let win = this.windowList.get(id)!;
-      win.setWindowDecorVisible(bordered);
-      await this.setWindowSize(id, w, h);
     } catch (err) {
     }
   }

@@ -34,10 +34,13 @@ typedef struct
     EGLSurface egl_surface;
     EGLContext egl_context;
 #endif
+    Uint32 window_id;
     OHNativeWindow *native_window;
 } OHOS_WindowData;
 
 extern napi_value OHOS_ThreadSafe_RegisterCallCreateWindow(napi_env env, napi_callback_info info);
+
+extern napi_value OHOS_Window_NotifyWindowCreated(napi_env env, napi_callback_info info);
 
 extern int OHOS_CreateWindow(_THIS, SDL_Window *window);
 
