@@ -23,41 +23,42 @@
 #ifndef SDL_OHOSVIDEO_H
 #define SDL_OHOSVIDEO_H
 
-#include <EGL/egl.h>
 #include <window_manager/oh_display_info.h>
 
 #include "../SDL_sysvideo.h"
-#include "SDL_mutex.h"
-#include "SDL_rect.h"
 
+/* Private display data */
 typedef struct
 {
-#ifdef SDL_VIDEO_OPENGL_EGL
-    EGLDisplay egl_display;
-    EGLConfig egl_config;
-    EGLint egl_major;
-    EGLint egl_minor;
-#endif
-} OHOS_VideoDeviceData;
+  int unused;
+} SDL_VideoData;
 
-/* Used to fill private data */
 typedef struct
 {
     Uint32 id;
+
     int physical_width;
     int physical_height;
+
     Uint32 available_width;
     Uint32 available_height;
+
     float density_dpi;
     float density_pixels;
+
     float scaled_density;
+
     float x_dpi;
     float y_dpi;
-    NativeDisplayManager_Rotation rotation;
-} OHOS_VideoDisplayData;
 
-extern SDL_mutex *ohos_window_mutex;
-extern float density_pixels;
+    NativeDisplayManager_Rotation rotation;
+
+    NativeDisplayManager_DisplayState state;
+
+    NativeDisplayManager_Orientation orientation;
+} SDL_DisplayData;
+
+extern const char *OHOS_Tool_DisplayManagerErrorToString(NativeDisplayManager_ErrorCode code);
 
 #endif // SDL_OHOSVIDEO_H
 

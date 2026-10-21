@@ -22,10 +22,11 @@
 
 #ifdef __OHOS__
 
+#include <hilog/log.h>
+
 #include "SDL_mutex.h"
 #include "SDL_ohos.h"
 #include "SDL_stdinc.h"
-#include "SDL_system.h"
 
 #include <napi/native_api.h>
 
@@ -115,43 +116,55 @@ napi_value Napi_CreateUndefined(napi_env env)
     return result;
 }
 
-SDL_bool Napi_SetNamedProperty(napi_env env, napi_value obj, const char *name, napi_value data)
+int Napi_SetNamedProperty(napi_env env, napi_value obj, const char *name, napi_value data)
 {
     napi_status status;
+    int retval = 0;
     if (!data) {
-        return SDL_FALSE;
+        Napi_ThrowError(env, napi_invalid_arg, "Napi_SetNamedProperty: invalid data");
+        retval = SDL_SetError("Napi_SetNamedProperty: invalid data");
+        goto endfunc;
     }
     if ((status = napi_set_named_property(env, obj, name, data)) != napi_ok) {
         Napi_ThrowError(env, status, "Napi_SetNamedProperty: set named property failed");
-        return SDL_FALSE;
+        retval = SDL_SetError("Napi_SetNamedProperty: set named property failed");
+        goto endfunc;
     }
-    return SDL_TRUE;
+endfunc:
+    return retval;
 }
 
-SDL_bool Napi_CheckTSFCallbackArg(napi_env env, napi_callback_info info, napi_value *cb)
+int Napi_CheckTSFCallbackArg(napi_env env, napi_callback_info info, napi_value *cb)
 {
     size_t argc = 1;
     napi_valuetype type = napi_undefined;
     napi_status status;
+    int retval = 0;
 
     *cb = NULL;
     if ((status = napi_get_cb_info(env, info, &argc, cb, NULL, NULL)) != napi_ok) {
         Napi_ThrowError(env, status, "Napi_GetCallbackArg: get_cb_info failed");
-        return SDL_FALSE;
+        retval = SDL_SetError("Napi_GetCallbackArg: get_cb_info failed");
+        goto endfunc;
     }
     if (*cb == NULL) {
         Napi_ThrowError(env, napi_invalid_arg, "Napi_GetCallbackArg: missing callback argument");
-        return SDL_FALSE;
+        retval = SDL_SetError("Napi_GetCallbackArg: missing callback argument");
+        goto endfunc;
     }
     if ((status = napi_typeof(env, *cb, &type)) != napi_ok) {
         Napi_ThrowError(env, status, "Napi_GetCallbackArg: typeof failed");
-        return SDL_FALSE;
+        retval = SDL_SetError("Napi_GetCallbackArg: typeof failed");
+        goto endfunc;
     }
     if (type != napi_function) {
         Napi_ThrowError(env, napi_invalid_arg, "Napi_GetCallbackArg: argument is not a function");
-        return SDL_FALSE;
+        retval = SDL_SetError("Napi_GetCallbackArg: argument is not a function");
+        goto endfunc;
     }
-    return SDL_TRUE;
+
+endfunc:
+    return retval;
 }
 
 static void Napi_FinalizeTSF(napi_env env, void *finalize_data, void *hint)
@@ -164,77 +177,90 @@ static void Napi_FinalizeTSF(napi_env env, void *finalize_data, void *hint)
     }
 }
 
-SDL_bool Napi_CreateTSF(napi_env env, napi_value cb, const char *name, napi_threadsafe_function_call_js js_cb, napi_threadsafe_function *tsf)
+int Napi_CreateTSF(napi_env env, napi_value cb, const char *name, napi_threadsafe_function_call_js js_cb, napi_threadsafe_function *tsf)
 {
     napi_value resource_name = NULL;
     napi_status status;
+    int retval = 0;
 
     if (*tsf != NULL) {
         status = napi_release_threadsafe_function(*tsf, napi_tsfn_release);
         if (status != napi_ok) {
             Napi_ThrowError(env, status, "Napi_CreateTSF: release tsf failed");
-            return SDL_FALSE;
+            retval = SDL_SetError("Napi_CreateTSF: release tsf failed");
+            goto endfunc;
         }
         *tsf = NULL;
     }
 
     resource_name = Napi_CreateString(env, name);
     if (resource_name == NULL) {
-        return SDL_FALSE;
+        retval = SDL_SetError("Napi_CreateString: create string failed");
+        goto endfunc;
     }
 
     status = napi_create_threadsafe_function(env, cb, NULL, resource_name, 0, 1, tsf, Napi_FinalizeTSF, NULL, js_cb, tsf);
     if (status != napi_ok) {
         Napi_ThrowError(env, status, "Napi_CreateTSF: create tsf failed");
-        return SDL_FALSE;
+        retval = SDL_SetError("Napi_CreateTSF: create tsf failed");
+        goto endfunc;
     }
 
-    return SDL_TRUE;
+endfunc:
+    return retval;
 }
 
-SDL_bool Napi_CallFunction(napi_env env, napi_value func, size_t argc, const napi_value *argv)
+int Napi_CallFunction(napi_env env, napi_value func, size_t argc, const napi_value *argv)
 {
     napi_value undefined = NULL;
     napi_status status;
+    int retval = 0;
 
     if (func == NULL || (argc > 0 && argv == NULL)) {
         Napi_ThrowError(env, napi_invalid_arg, "Napi_CallTSF: func or argv invalid");
-        return SDL_FALSE;
+        retval = SDL_SetError("Napi_CallTSF: func or argv invalid");
+        goto endfunc;
     }
 
     undefined = Napi_CreateUndefined(env);
     if (undefined == NULL) {
-        return SDL_FALSE;
+        retval = SDL_SetError("Napi_CreateUndefined: create undefined failed");
+        goto endfunc;
     }
 
     status = napi_call_function(env, undefined, func, argc, argv, NULL);
     if (status != napi_ok) {
         Napi_ThrowError(env, status, "Napi_CallFunction: call js function failed");
-        return SDL_FALSE;
+        retval = SDL_SetError("Napi_CallFunction: call js function failed");
+        goto endfunc;
     }
-    return SDL_TRUE;
+
+endfunc:
+    return retval;
 }
 
-SDL_bool Napi_CallThreadSafeFunction(napi_threadsafe_function tsf, void *data)
+int Napi_CallThreadSafeFunction(napi_threadsafe_function tsf, void *data)
 {
     napi_status status;
+    int retval = 0;
 
     if (tsf == NULL) {
-        SDL_SetError("Napi_CallThreadSafeFunction: tsf has not been initialized");
-        return SDL_FALSE;
+        retval = SDL_SetError("Napi_CallThreadSafeFunction: tsf has not been initialized");
+        goto endfunc;
     }
     if (data == NULL) {
-        SDL_SetError("Napi_CallThreadSafeFunction: data is NULL");
-        return SDL_FALSE;
+        retval = SDL_SetError("Napi_CallThreadSafeFunction: data is NULL");
+        goto endfunc;
     }
 
     status = napi_call_threadsafe_function(tsf, data, napi_tsfn_nonblocking);
     if (status != napi_ok) {
-        SDL_SetError("Napi_CallThreadSafeFunction: call failed with (%s, status %d)", Napi_StatusStr(status), (Sint32)status);
-        return SDL_FALSE;
+        retval = SDL_SetError("Napi_CallThreadSafeFunction: call failed with (%s, status %d)", Napi_StatusStr(status), (Sint32)status);
+        goto endfunc;
     }
 
-    return SDL_TRUE;
+endfunc:
+    return retval;
 }
 
 void Napi_ClearPending(napi_env env, const char *context)
@@ -261,6 +287,91 @@ void Napi_ThrowError(napi_env env, napi_status status, const char *data)
         return;
     }
     napi_throw_error(env, Napi_StatusStr(status), data);
+}
+
+int Napi_GetUint32(napi_env env, napi_value value, Uint32 *result)
+{
+    napi_status status;
+    napi_valuetype type = napi_undefined;
+    int retval = 0;
+
+    if (value == NULL || result == NULL) {
+        Napi_ThrowError(env, napi_invalid_arg, "Napi_GetUint32: value or result is NULL");
+        retval = SDL_SetError("Napi_GetUint32: value or result is NULL");
+        goto endfunc;
+    }
+
+    if ((status = napi_typeof(env, value, &type)) != napi_ok) {
+        Napi_ThrowError(env, status, "Napi_GetUint32: typeof failed");
+        retval = SDL_SetError("Napi_GetUint32: typeof failed (%s, status %d)",
+                              Napi_StatusStr(status), (int)status);
+        goto endfunc;
+    }
+    if (type != napi_number) {
+        Napi_ThrowError(env, napi_invalid_arg, "Napi_GetUint32: value is not a number");
+        retval = SDL_SetError("Napi_GetUint32: value is not a number");
+        goto endfunc;
+    }
+
+    if ((status = napi_get_value_uint32(env, value, result)) != napi_ok) {
+        Napi_ThrowError(env, status, "Napi_GetUint32: get_value_uint32 failed");
+        retval = SDL_SetError("Napi_GetUint32: get_value_uint32 failed (%s, status %d)",
+                              Napi_StatusStr(status), (int)status);
+        goto endfunc;
+    }
+
+endfunc:
+    return retval;
+}
+
+int Napi_GetString(napi_env env, napi_value value, char *buf, size_t buflen)
+{
+    napi_status status;
+    napi_valuetype type = napi_undefined;
+    size_t str_len = 0;
+    int retval = 0;
+
+    if (value == NULL || buf == NULL || buflen == 0) {
+        Napi_ThrowError(env, napi_invalid_arg, "Napi_GetString: value, buf or buflen is invalid");
+        retval = SDL_SetError("Napi_GetString: value, buf or buflen is invalid");
+        goto endfunc;
+    }
+
+    if ((status = napi_typeof(env, value, &type)) != napi_ok) {
+        Napi_ThrowError(env, status, "Napi_GetString: typeof failed");
+        retval = SDL_SetError("Napi_GetString: typeof failed (%s, status %d)",
+                              Napi_StatusStr(status), (int)status);
+        goto endfunc;
+    }
+    if (type != napi_string) {
+        Napi_ThrowError(env, napi_invalid_arg, "Napi_GetString: value is not a string");
+        retval = SDL_SetError("Napi_GetString: value is not a string");
+        goto endfunc;
+    }
+
+    if ((status = napi_get_value_string_utf8(env, value, NULL, 0, &str_len)) != napi_ok) {
+        Napi_ThrowError(env, status, "Napi_GetString: query length failed");
+        retval = SDL_SetError("Napi_GetString: query length failed (%s, status %d)",
+                              Napi_StatusStr(status), (int)status);
+        goto endfunc;
+    }
+
+    if (str_len + 1 > buflen) {
+        Napi_ThrowError(env, napi_invalid_arg, "Napi_GetString: buffer too small");
+        retval = SDL_SetError("Napi_GetString: buffer too small (need %zu, got %zu)",
+                              str_len + 1, buflen);
+        goto endfunc;
+    }
+
+    if ((status = napi_get_value_string_utf8(env, value, buf, buflen, &str_len)) != napi_ok) {
+        Napi_ThrowError(env, status, "Napi_GetString: copy failed");
+        retval = SDL_SetError("Napi_GetString: copy failed (%s, status %d)",
+                              Napi_StatusStr(status), (int)status);
+        goto endfunc;
+    }
+
+endfunc:
+    return retval;
 }
 
 static napi_value OHOS_Napi_UpdateLocale(napi_env env, napi_callback_info info)
@@ -299,7 +410,8 @@ static napi_value OHOS_Napi_RegisterInterface(napi_env env, napi_value exports)
 {
     napi_property_descriptor desc[] = {
         { "updateLocale", NULL, OHOS_Napi_UpdateLocale, NULL, NULL, NULL, napi_default, NULL },
-        { "requestWindowReady", NULL, OHOS_ThreadSafe_RegisterCallCreateWindow, NULL, NULL, NULL, napi_default, NULL },
+        { "registerCallCreateWindow", NULL, OHOS_ThreadSafe_RegisterCallCreateWindow, NULL, NULL, NULL, napi_default, NULL },
+        { "notifyWindowCreated", NULL, OHOS_Window_NotifyWindowCreated, NULL, NULL, NULL, napi_default, NULL },
         { "bindNode", NULL, OHOS_NodeContent_BindNode, NULL, NULL, NULL, napi_default, NULL },
         { "unbindNode", NULL, OHOS_NodeContent_UnbindNode, NULL, NULL, NULL, napi_default, NULL },
     };

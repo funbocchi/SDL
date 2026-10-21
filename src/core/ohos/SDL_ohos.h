@@ -28,12 +28,11 @@
 extern "C" {
 #endif
 
+#include <hilog/log.h>
 #include <napi/native_api.h>
 #include <native_window/external_window.h>
 
-#include "SDL_audio.h"
-#include "SDL_rect.h"
-#include "SDL_video.h"
+// C -> JS
 
 extern napi_value Napi_CreateString(napi_env env, const char *data);
 
@@ -47,19 +46,23 @@ extern napi_value Napi_CreateNull(napi_env env);
 
 extern napi_value Napi_CreateUndefined(napi_env env);
 
-extern SDL_bool Napi_SetNamedProperty(napi_env env, napi_value obj, const char *name, napi_value data);
+extern int Napi_SetNamedProperty(napi_env env, napi_value obj, const char *name, napi_value data);
 
-extern SDL_bool Napi_CheckTSFCallbackArg(napi_env env, napi_callback_info info, napi_value *cb);
+extern int Napi_CheckTSFCallbackArg(napi_env env, napi_callback_info info, napi_value *cb);
 
-extern SDL_bool Napi_CreateTSF(napi_env env, napi_value cb, const char *name, napi_threadsafe_function_call_js js_cb, napi_threadsafe_function *tsf);
+extern int Napi_CreateTSF(napi_env env, napi_value cb, const char *name, napi_threadsafe_function_call_js js_cb, napi_threadsafe_function *tsf);
 
-extern SDL_bool Napi_CallFunction(napi_env env, napi_value func, size_t argc, const napi_value *argv);
+extern int Napi_CallFunction(napi_env env, napi_value func, size_t argc, const napi_value *argv);
 
-extern SDL_bool Napi_CallThreadSafeFunction(napi_threadsafe_function tsf, void *data);
+extern int Napi_CallThreadSafeFunction(napi_threadsafe_function tsf, void *data);
 
 extern void Napi_ClearPending(napi_env env, const char *context);
 
 extern void Napi_ThrowError(napi_env env, napi_status status, const char *data);
+
+// JS -> C
+
+extern int Napi_GetUint32(napi_env env, napi_value value, Uint32 *result);
 
 /* Ends C function definitions when using C++ */
 #ifdef __cplusplus

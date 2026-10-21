@@ -22,40 +22,58 @@
 
 #ifdef SDL_VIDEO_DRIVER_OHOS
 
-#include <EGL/egl.h>
-#include <window_manager/oh_display_info.h>
+#include "SDL_ohosvideo.h"
+
 #include <window_manager/oh_display_manager.h>
 
-#include "../../events/SDL_events_c.h"
-#include "../../events/SDL_windowevents_c.h"
-#include "../SDL_pixels_c.h"
-#include "../SDL_sysvideo.h"
-#include "SDL_hints.h"
-#include "SDL_mouse.h"
-#include "SDL_video.h"
-
+#include "../../core/ohos/SDL_ohos.h"
+#ifdef SDL_VIDEO_OPENGL_EGL
+#include "SDL_ohosgles.h"
+#endif
+#ifdef SDL_VIDEO_VULKAN
+#include "SDL_ohosvulkan.h"
+#endif
 #include "SDL_ohosmessagebox.h"
-#include "SDL_ohosvideo.h"
 #include "SDL_ohoswindow.h"
 
 #define OHOS_VID_DRIVER_NAME "OHOS"
 
-SDL_mutex *ohos_window_mutex = NULL;
-SDL_sem *ohos_window_sem = NULL;
-
-float density_pixels = 1.0f;
-
-/* Tools */
-static SDL_DisplayOrientation OHOS_RotationToOrientation(NativeDisplayManager_Rotation rotation)
+const char *OHOS_Tool_DisplayManagerErrorToString(NativeDisplayManager_ErrorCode code)
 {
-    switch (rotation) {
-    case DISPLAY_MANAGER_ROTATION_0:
+    switch (code) {
+    case DISPLAY_MANAGER_OK:
+        return "OK";
+    case DISPLAY_MANAGER_ERROR_NO_PERMISSION:
+        return "Permission verification failed";
+    case DISPLAY_MANAGER_ERROR_NOT_SYSTEM_APP:
+        return "Non-system application attempts to call a system API";
+    case DISPLAY_MANAGER_ERROR_INVALID_PARAM:
+        return "Parameter check failed";
+    case DISPLAY_MANAGER_ERROR_DEVICE_NOT_SUPPORTED:
+        return "Device does not support the API";
+    case DISPLAY_MANAGER_ERROR_INVALID_SCREEN:
+        return "Invalid display";
+    case DISPLAY_MANAGER_ERROR_INVALID_CALL:
+        return "Operation object does not have the operation permission";
+    case DISPLAY_MANAGER_ERROR_SYSTEM_ABNORMAL:
+        return "System service is abnormal";
+    case DISPLAY_MANAGER_ERROR_ILLEGAL_PARAM:
+        return "Illegal parameter";
+    default:
+        return "Unknown display manager error";
+    }
+}
+
+static SDL_DisplayOrientation OHOS_Tool_OrientationToSDL(NativeDisplayManager_Orientation orientation)
+{
+    switch (orientation) {
+    case DISPLAY_MANAGER_PORTRAIT:
         return SDL_ORIENTATION_PORTRAIT;
-    case DISPLAY_MANAGER_ROTATION_90:
+    case DISPLAY_MANAGER_LANDSCAPE:
         return SDL_ORIENTATION_LANDSCAPE;
-    case DISPLAY_MANAGER_ROTATION_180:
+    case DISPLAY_MANAGER_PORTRAIT_INVERTED:
         return SDL_ORIENTATION_PORTRAIT_FLIPPED;
-    case DISPLAY_MANAGER_ROTATION_270:
+    case DISPLAY_MANAGER_LANDSCAPE_INVERTED:
         return SDL_ORIENTATION_LANDSCAPE_FLIPPED;
     default:
         return SDL_ORIENTATION_UNKNOWN;
@@ -64,174 +82,264 @@ static SDL_DisplayOrientation OHOS_RotationToOrientation(NativeDisplayManager_Ro
 
 static int OHOS_VideoInit(_THIS)
 {
-    OHOS_VideoDeviceData *video_device_data = NULL;
-    int dis_index;
+    int retval = 0;
+
+    SDL_VideoData *video_data = (SDL_VideoData *)(_this->driverdata);
+
+    SDL_DisplayData *dis_data;
+
     SDL_VideoDisplay display;
     SDL_DisplayMode mode;
 
+    NativeDisplayManager_ErrorCode err_code;
     NativeDisplayManager_DisplaysInfo *all_displays = NULL;
-    NativeDisplayManager_DisplayInfo *dis_info = NULL;
-    NativeDisplayManager_ErrorCode error_code;
+    NativeDisplayManager_DisplayInfo *display_info = NULL;
+    int display_index;
 
-    OH_NativeDisplayManager_GetDefaultDisplayDensityPixels(&density_pixels);
-
-#ifdef SDL_VIDEO_OPENGL_EGL
-    EGLint attribs[] = {
-        EGL_SURFACE_TYPE, EGL_WINDOW_BIT, EGL_RED_SIZE, 8, EGL_GREEN_SIZE, 8, EGL_BLUE_SIZE, 8, EGL_ALPHA_SIZE, 8, EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT, EGL_NONE
-    };
-    EGLint num_configs = 0;
-#endif
-
-    OHOS_VideoDisplayData *video_display_data = NULL;
-
-    video_device_data = (OHOS_VideoDeviceData *)SDL_calloc(1, sizeof(OHOS_VideoDeviceData));
-    if (!video_device_data) {
-        return SDL_OutOfMemory();
-    }
-    _this->driverdata = video_device_data;
-
-#ifdef SDL_VIDEO_OPENGL_EGL
-    video_device_data->egl_display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
-    if (video_device_data->egl_display == EGL_NO_DISPLAY) {
-        SDL_free(video_device_data);
-        _this->driverdata = NULL;
-        return SDL_SetError("OHOS VideoInit: eglGetDisplay failed");
+    if ((err_code = OH_NativeDisplayManager_CreateAllDisplays(&all_displays)) != DISPLAY_MANAGER_OK) {
+        retval = SDL_SetError("OHOS VideoInit: OH_NativeDisplayManager_CreateAllDisplays failed, err_code: %s (%d)",
+                              OHOS_Tool_DisplayManagerErrorToString(err_code), (int)err_code);
+        goto errfunc;
     }
 
-    if (!eglInitialize(video_device_data->egl_display, &video_device_data->egl_major, &video_device_data->egl_minor)) {
-        eglTerminate(video_device_data->egl_display);
-        SDL_free(video_device_data);
-        _this->driverdata = NULL;
-        return SDL_SetError("OHOS VideoInit: eglInitialze failed");
+    if (all_displays == NULL) {
+        retval = SDL_SetError("OHOS VideoInit: OH_NativeDisplayManager_CreateAllDisplays returned OK but all_displays is NULL (no display info available)");
+        goto errfunc;
     }
 
-    if (!eglChooseConfig(video_device_data->egl_display, attribs, &video_device_data->egl_config, 1, &num_configs) || num_configs == 0) {
-        eglTerminate(video_device_data->egl_display);
-        SDL_free(video_device_data);
-        _this->driverdata = NULL;
-        return SDL_SetError("OHOS VideoInit: eglChooseConfig failed");
-    }
-#endif
+    for (display_index = 0; display_index < all_displays->displaysLength; display_index++) {
+        display_info = &(all_displays->displaysInfo[display_index]);
 
-    error_code = OH_NativeDisplayManager_CreateAllDisplays(&all_displays);
-
-    if (error_code == DISPLAY_MANAGER_OK && all_displays != NULL) {
-        for (dis_index = 0; dis_index < all_displays->displaysLength; dis_index++) {
-            dis_info = &all_displays->displaysInfo[dis_index];
-            if (!dis_info->isAlive) {
-                continue;
-            }
-            SDL_zero(mode);
-            mode.format = SDL_PIXELFORMAT_RGBA8888;
-            mode.w = dis_info->width;
-            mode.h = dis_info->height;
-            mode.refresh_rate = (int)dis_info->refreshRate;
-            mode.driverdata = NULL;
-
-            video_display_data = (OHOS_VideoDisplayData *)SDL_calloc(1, sizeof(OHOS_VideoDisplayData));
-            if (!video_display_data) {
-                SDL_OutOfMemory();
-                video_display_data = NULL;
-                continue;
-            }
-            video_display_data->id = dis_info->id;
-            video_display_data->physical_width = dis_info->physicalWidth;
-            video_display_data->physical_height = dis_info->physicalHeight;
-            video_display_data->available_width = dis_info->availableWidth;
-            video_display_data->available_height = dis_info->availableHeight;
-            video_display_data->density_dpi = dis_info->densityDPI;
-            video_display_data->density_pixels = dis_info->densityPixels;
-            video_display_data->scaled_density = dis_info->scaledDensity;
-            video_display_data->x_dpi = dis_info->xDPI;
-            video_display_data->y_dpi = dis_info->yDPI;
-            video_display_data->rotation = dis_info->rotation;
-
-            SDL_zero(display);
-            display.desktop_mode = mode;
-            display.current_mode = mode;
-            display.orientation = OHOS_RotationToOrientation(video_display_data->rotation);
-            display.driverdata = video_display_data;
-
-            if (SDL_AddVideoDisplay(&display, SDL_FALSE) < 0) {
-                SDL_free(video_display_data);
-            }
+        if (!display_info->isAlive) {
+            continue;
         }
 
-        OH_NativeDisplayManager_DestroyAllDisplays(all_displays);
+        dis_data = (SDL_DisplayData *)SDL_calloc(1, sizeof(SDL_DisplayData));
+        if (!dis_data) {
+            SDL_SetError("OHOS VideoInit: failed to calloc dis_data");
+            continue;
+        }
+
+        SDL_zero(mode);
+        SDL_zero(display);
+
+        mode.refresh_rate = (int)(display_info->refreshRate);
+
+        mode.w = display_info->width;
+        mode.h = display_info->height;
+
+        mode.format = SDL_PIXELFORMAT_RGBA8888;
+
+        display.desktop_mode = mode;
+        display.current_mode = mode;
+
+        display.name = display_info->name;
+
+        display.orientation = OHOS_Tool_OrientationToSDL(display_info->orientation);
+
+        dis_data->id = display_info->id;
+        dis_data->physical_width = display_info->physicalWidth;
+        dis_data->physical_height = display_info->physicalHeight;
+        dis_data->available_width = display_info->availableWidth;
+        dis_data->available_height = display_info->availableHeight;
+        dis_data->density_dpi = display_info->densityDPI;
+        dis_data->density_pixels = display_info->densityPixels;
+        dis_data->scaled_density = display_info->scaledDensity;
+        dis_data->x_dpi = display_info->xDPI;
+        dis_data->y_dpi = display_info->yDPI;
+        dis_data->rotation = display_info->rotation;
+        dis_data->state = display_info->state;
+        dis_data->orientation = display_info->orientation;
+
+        display.driverdata = dis_data;
+
+        if (SDL_AddVideoDisplay(&display, SDL_FALSE) < 0) {
+            SDL_SetError("OHOS VideoInit: failed to add display '%s' (index %d)",
+                         display.name ? display.name : "unknown", display_index);
+            SDL_free(display.driverdata);
+            continue;
+        }
+
+        SDL_AddDisplayMode(&_this->displays[_this->num_displays - 1], &mode);
     }
+
+    OH_NativeDisplayManager_DestroyAllDisplays(all_displays);
+    all_displays = NULL;
 
     if (SDL_GetNumVideoDisplays() == 0) {
-#ifdef SDL_VIDEO_OPENGL_EGL
-        eglTerminate(video_device_data->egl_display);
-#endif
-        SDL_free(video_device_data);
-        _this->driverdata = NULL;
-        return SDL_SetError("OHOS VideoInit: No displays available");
+        retval = SDL_SetError("OHOS VideoInit: no active display found");
     }
 
-    return 0;
+    return retval;
+
+errfunc:
+    if (all_displays) {
+        OH_NativeDisplayManager_DestroyAllDisplays(all_displays);
+        all_displays = NULL;
+    }
+    return retval;
 }
 
 static void OHOS_VideoQuit(_THIS)
 {
-    OHOS_VideoDeviceData *video_device_data = NULL;
-    SDL_VideoDisplay *display = NULL;
-    int num_displays = 0;
+    SDL_VideoData *video_data = (SDL_VideoData *)(_this->driverdata);
+    int num_displays = SDL_GetNumVideoDisplays();
     int i;
 
-    video_device_data = (OHOS_VideoDeviceData *)_this->driverdata;
-    num_displays = SDL_GetNumVideoDisplays();
     for (i = 0; i < num_displays; i++) {
-        display = SDL_GetDisplay(i);
+        SDL_VideoDisplay *display = SDL_GetDisplay(i);
         if (display && display->driverdata) {
             SDL_free(display->driverdata);
             display->driverdata = NULL;
         }
     }
 
-#ifdef SDL_VIDEO_OPENGL_EGL
-    if (video_device_data->egl_display != EGL_NO_DISPLAY) {
-        eglTerminate(video_device_data->egl_display);
-        video_device_data->egl_display = EGL_NO_DISPLAY;
-    }
-#endif
+    /* TODO: 注销显示变化监听器 */
 
-    SDL_free(video_device_data);
+    if (video_data) {
+        SDL_free(video_data);
+    }
     _this->driverdata = NULL;
+}
+
+static int OHOS_GetDisplayDPI(_THIS, SDL_VideoDisplay *display, float *ddpi, float *hdpi, float *vdpi)
+{
+    SDL_DisplayData *data = (SDL_DisplayData *)(display->driverdata);
+    if (!data) {
+        return SDL_SetError("OHOS_GetDisplayDPI: no driverdata");
+    }
+
+    if (hdpi) {
+        *hdpi = data->x_dpi;
+    }
+    if (vdpi) {
+        *vdpi = data->y_dpi;
+    }
+
+    if (ddpi) {
+        if (data->x_dpi > 0.0f && data->y_dpi > 0.0f && display->desktop_mode.w > 0 && display->desktop_mode.h > 0) {
+            *ddpi = SDL_ComputeDiagonalDPI(display->desktop_mode.w, display->desktop_mode.h,
+                                           (float)(display->desktop_mode.w) / (data->x_dpi), (float)(display->desktop_mode.h) / (data->y_dpi));
+        } else {
+            *ddpi = 0.0f;
+        }
+    }
+    return 0;
+}
+
+static void OHOS_DeleteDevice(SDL_VideoDevice *device)
+{
+    SDL_free(device->driverdata);
+    SDL_free(device);
 }
 
 static SDL_VideoDevice *OHOS_CreateDevice(void)
 {
-    SDL_VideoDevice *device;
-    SDL_bool block_on_pause;
+    SDL_VideoDevice *device = NULL;
+    SDL_VideoData *data = NULL;
+
+    OH_LOG_INFO(LOG_APP, "进入到 CreateDevice");
 
     device = (SDL_VideoDevice *)SDL_calloc(1, sizeof(SDL_VideoDevice));
     if (!device) {
         SDL_OutOfMemory();
-        return NULL;
+        goto errfunc;
     }
 
+    data = (SDL_VideoData *)SDL_calloc(1, sizeof(SDL_VideoData));
+    if (!data) {
+        SDL_OutOfMemory();
+        goto errfunc;
+    }
+
+    device->driverdata = data;
+
+    /* 绑定接口实现 */
     device->VideoInit = OHOS_VideoInit;
     device->VideoQuit = OHOS_VideoQuit;
 
-    device->CreateSDLWindow = OHOS_CreateSDLWindow;
+    device->GetDisplayDPI = OHOS_GetDisplayDPI;
 
+    device->CreateSDLWindow = OHOS_CreateWindow;
+    device->CreateSDLWindowFrom;
+    device->SetWindowTitle = OHOS_SetWindowTitle;
+    device->SetWindowIcon;
+    device->SetWindowPosition = OHOS_SetWindowPosition;
+    device->SetWindowSize = OHOS_SetWindowSize;
+    device->SetWindowMinimumSize;
+    device->SetWindowMaximumSize;
+    device->GetWindowBordersSize;
+    device->GetWindowSizeInPixels;
+    device->SetWindowOpacity;
+    device->SetWindowModalFor;
+    device->SetWindowInputFocus;
+    device->ShowWindow = OHOS_ShowWindow;
+    device->HideWindow = OHOS_HideWindow;
+    device->RaiseWindow;
+    device->MaximizeWindow;
+    device->MinimizeWindow;
+    device->RestoreWindow;
+    device->SetWindowBordered;
+    device->SetWindowResizable;
+    device->SetWindowAlwaysOnTop;
+    device->SetWindowFullscreen;
+    device->SetWindowGammaRamp;
+    device->GetWindowGammaRamp;
+    device->GetWindowICCProfile;
+    device->GetWindowDisplayIndex;
+    device->SetWindowMouseRect;
+    device->SetWindowMouseGrab;
+    device->SetWindowKeyboardGrab;
+    device->DestroyWindow;
+    device->CreateWindowFramebuffer;
+    device->UpdateWindowFramebuffer;
+    device->DestroyWindowFramebuffer;
+    device->OnWindowEnter;
+    device->FlashWindow;
+
+    /* GLES */
 #ifdef SDL_VIDEO_OPENGL_EGL
+    device->GL_LoadLibrary;
+    device->GL_GetProcAddress;
+    device->GL_UnloadLibrary;
+    device->GL_CreateContext;
+    device->GL_MakeCurrent;
+    device->GL_GetDrawableSize;
+    device->GL_SetSwapInterval;
+    device->GL_GetSwapInterval;
+    device->GL_SwapWindow;
+    device->GL_DeleteContext;
+    device->GL_DefaultProfileConfig;
 #endif
 
+    /* Vulkan*/
 #ifdef SDL_VIDEO_VULKAN
+    device->Vulkan_LoadLibrary;
+    device->Vulkan_UnloadLibrary;
+    device->Vulkan_GetInstanceExtensions;
+    device->Vulkan_CreateSurface;
+    device->Vulkan_GetDrawableSize;
 #endif
 
-    device->driverdata = NULL; /* Create and populate in videoinit */
+    device->free = OHOS_DeleteDevice;
+
     return device;
+
+errfunc:
+    if (device) {
+        SDL_free(device);
+    }
+    if (data) {
+        SDL_free(data);
+    }
+    return NULL;
 }
 
 VideoBootStrap OHOS_bootstrap = {
     OHOS_VID_DRIVER_NAME,
     "SDL OHOS video driver",
     OHOS_CreateDevice,
-    /* OHOS_ShowMessageBox */
-    NULL
+    OHOS_ShowMessageBox
 };
 
 #endif
