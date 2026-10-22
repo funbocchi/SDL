@@ -1,6 +1,9 @@
 {
   "apiType": "stageMode",
   "buildOption": {
+    "nativeLib": {
+      "headerPath": "../../include/"
+    },
     "externalNativeOptions": {
       "path": "../../CMakeLists.txt",
       "arguments": "-DCMAKE_PLATFORM_NO_VERSIONED_SONAME=1",

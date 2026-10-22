@@ -1812,7 +1812,7 @@ elseif(OHOS)
   endif()
   cmake_pop_check_state()
   
-  if(NOT SDL_TIMERS)
+  if(SDL_TIMERS)
     set(SDL_TIMER_UNIX 1)
     file(GLOB TIMER_SOURCES ${SDL2_SOURCE_DIR}/src/timer/unix/*.c)
     list(APPEND SOURCE_FILES ${TIMER_SOURCES})

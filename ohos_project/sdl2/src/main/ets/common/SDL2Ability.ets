@@ -1,8 +1,8 @@
 import { AbilityConstant, Configuration, UIAbility, Want } from "@kit.AbilityKit"
 import { window } from '@kit.ArkUI'
-import { requestWindowReady, SDLWindowRequestParams } from "libsdl2.so";
+import { OHOSWindowRequest, OHOSWindowRequestCallback, registerWindowRequestCallback } from "libsdl2.so";
 import { SDL2LocalManager } from "../manager/SDL2LocaleManager"
-import { WindowStageManager } from "../manager/SDL2WindowStageManager"
+import { SDLWindowManager } from "../manager/SDL2WindowStageManager"
 
 export class BaseSDL2Ability extends UIAbility {
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
@@ -13,27 +13,30 @@ export class BaseSDL2Ability extends UIAbility {
   }
 
   onWindowStageCreate(windowStage: window.WindowStage): void {
-    WindowStageManager.getInstance()
+    SDLWindowManager.getInstance()
       .init(windowStage);
 
-    requestWindowReady((req: SDLWindowRequestParams): void => {
-      WindowStageManager.getInstance()
-        .createNewWindow(req);
-    });
-    
+    registerWindowRequestCallback((req: OHOSWindowRequest): void => {
+      SDLWindowManager.getInstance()
+        .handleWindowRequest(req);
+    })
+
     this.onWindowStageCreateHook();
+  }
+
+  onWindowStageCreateHook(): void {
   }
 
   onWindowStageWillDestroy(windowStage: window.WindowStage): void {
   }
 
   onWindowStageDestroy(): void {
-    WindowStageManager.getInstance()
+    SDLWindowManager.getInstance()
       .destroy();
   }
 
   onWindowStageRestore(windowStage: window.WindowStage): void {
-    WindowStageManager.getInstance()
+    SDLWindowManager.getInstance()
       .init(windowStage);
   }
 
@@ -55,9 +58,5 @@ export class BaseSDL2Ability extends UIAbility {
   }
 
   onConfigurationUpdate(newConfig: Configuration): void {
-  }
-
-  onWindowStageCreateHook(): void {
-
   }
 }

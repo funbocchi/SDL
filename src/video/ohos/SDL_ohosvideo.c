@@ -24,6 +24,8 @@
 
 #include "SDL_ohosvideo.h"
 
+#include <fcntl.h>
+#include <unistd.h>
 #include <window_manager/oh_display_manager.h>
 
 #include "../../core/ohos/SDL_ohos.h"
@@ -33,6 +35,7 @@
 #ifdef SDL_VIDEO_VULKAN
 #include "SDL_ohosvulkan.h"
 #endif
+#include "SDL_ohosevents.h"
 #include "SDL_ohosmessagebox.h"
 #include "SDL_ohoswindow.h"
 
@@ -95,6 +98,22 @@ static int OHOS_VideoInit(_THIS)
     NativeDisplayManager_DisplaysInfo *all_displays = NULL;
     NativeDisplayManager_DisplayInfo *display_info = NULL;
     int display_index;
+    int fds[2];
+
+    video_data->wake_fd = -1;
+    video_data->wake_write = -1;
+    video_data->events_ready = SDL_FALSE;
+
+    if (pipe(fds) == 0) {
+        fcntl(fds[0], F_SETFL, O_NONBLOCK);
+        fcntl(fds[0], F_SETFD, FD_CLOEXEC);
+        fcntl(fds[1], F_SETFL, O_NONBLOCK);
+        fcntl(fds[1], F_SETFD, FD_CLOEXEC);
+
+        video_data->wake_fd = fds[0];
+        video_data->wake_write = fds[1];
+        video_data->events_ready = SDL_TRUE;
+    }
 
     if ((err_code = OH_NativeDisplayManager_CreateAllDisplays(&all_displays)) != DISPLAY_MANAGER_OK) {
         retval = SDL_SetError("OHOS VideoInit: OH_NativeDisplayManager_CreateAllDisplays failed, err_code: %s (%d)",
@@ -151,6 +170,12 @@ static int OHOS_VideoInit(_THIS)
         dis_data->state = display_info->state;
         dis_data->orientation = display_info->orientation;
 
+        if (OH_NativeDisplayManager_GetDisplayPosition(dis_data->id, &dis_data->x_offset, &dis_data->y_offset) != DISPLAY_MANAGER_OK) {
+            dis_data->x_offset = 0;
+            dis_data->y_offset = 0;
+            SDL_LogError(SDL_LOG_CATEGORY_VIDEO, "failed to get display position of %d", dis_data->id);
+        }
+
         display.driverdata = dis_data;
 
         if (SDL_AddVideoDisplay(&display, SDL_FALSE) < 0) {
@@ -197,6 +222,20 @@ static void OHOS_VideoQuit(_THIS)
     /* TODO: 注销显示变化监听器 */
 
     if (video_data) {
+        char byte = 0;
+
+        if (video_data->events_ready && video_data->wake_write >= 0) {
+            (void)write(video_data->wake_write, &byte, 1);
+        }
+        video_data->events_ready = SDL_FALSE;
+        if (video_data->wake_fd >= 0) {
+            close(video_data->wake_fd);
+            video_data->wake_fd = -1;
+        }
+        if (video_data->wake_write >= 0) {
+            close(video_data->wake_write);
+            video_data->wake_write = -1;
+        }
         SDL_free(video_data);
     }
     _this->driverdata = NULL;
@@ -238,7 +277,7 @@ static SDL_VideoDevice *OHOS_CreateDevice(void)
     SDL_VideoDevice *device = NULL;
     SDL_VideoData *data = NULL;
 
-    OH_LOG_INFO(LOG_APP, "进入到 CreateDevice");
+    SDL_LogInfo(SDL_LOG_CATEGORY_VIDEO, "OHOS_CreateDevice: begin");
 
     device = (SDL_VideoDevice *)SDL_calloc(1, sizeof(SDL_VideoDevice));
     if (!device) {
@@ -261,7 +300,7 @@ static SDL_VideoDevice *OHOS_CreateDevice(void)
     device->GetDisplayDPI = OHOS_GetDisplayDPI;
 
     device->CreateSDLWindow = OHOS_CreateWindow;
-    device->CreateSDLWindowFrom;
+    device->CreateSDLWindowFrom = OHOS_CreateWindowFrom;
     device->SetWindowTitle = OHOS_SetWindowTitle;
     device->SetWindowIcon;
     device->SetWindowPosition = OHOS_SetWindowPosition;
@@ -290,7 +329,7 @@ static SDL_VideoDevice *OHOS_CreateDevice(void)
     device->SetWindowMouseRect;
     device->SetWindowMouseGrab;
     device->SetWindowKeyboardGrab;
-    device->DestroyWindow;
+    device->DestroyWindow = OHOS_DestroyWindow;
     device->CreateWindowFramebuffer;
     device->UpdateWindowFramebuffer;
     device->DestroyWindowFramebuffer;
@@ -320,6 +359,10 @@ static SDL_VideoDevice *OHOS_CreateDevice(void)
     device->Vulkan_CreateSurface;
     device->Vulkan_GetDrawableSize;
 #endif
+
+    device->WaitEventTimeout = OHOS_WaitEventTimeout;
+    device->SendWakeupEvent = OHOS_SendWakeupEvent;
+    device->PumpEvents = OHOS_PumpEvents;
 
     device->free = OHOS_DeleteDevice;
 

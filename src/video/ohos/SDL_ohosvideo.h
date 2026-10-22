@@ -30,7 +30,9 @@
 /* Private display data */
 typedef struct
 {
-  int unused;
+    int wake_fd;
+    int wake_write;
+    SDL_bool events_ready;
 } SDL_VideoData;
 
 typedef struct
@@ -50,6 +52,9 @@ typedef struct
 
     float x_dpi;
     float y_dpi;
+
+    int x_offset;
+    int y_offset;
 
     NativeDisplayManager_Rotation rotation;
 

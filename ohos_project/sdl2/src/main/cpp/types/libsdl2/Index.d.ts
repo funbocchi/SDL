@@ -1,23 +1,40 @@
 import { FrameNode } from "@kit.ArkUI";
-export interface SDLWindowRequestParams {
+
+export interface OHOSWindowRequest {
+  cmd: number;
   id: number;
   title: string;
   x: number;
-  px_x_force: boolean;
   y: number;
-  px_y_force: boolean;
-  width: number;
-  height: number;
+  w: number;
+  h: number;
+  minW: number;
+  minH: number;
+  maxW: number;
+  maxH: number;
+  displayIndex: number;
   borderless: boolean;
-  hidden: boolean;
   resizable: boolean;
-  allowHighDPI: boolean;
+  allowHighdpi: boolean;
+  alwaysOnTop: boolean;
+  skipTaskbar: boolean;
+  utility: boolean;
+  tooltip: boolean;
+  popupMenu: boolean;
+  fullscreen: boolean;
+  fullscreenDesktop: boolean;
+  shown: boolean;
+  hidden: boolean;
+  opacity: number;
+  brightness: number;
 }
 
-export const requestWindowReady: (callback: (req: SDLWindowRequestParams) => void) => void;
+export type OHOSWindowRequestCallback = (request: OHOSWindowRequest) => void;
 
-export const updateLocale: (language: string, region: string) => void;
+export const registerWindowRequestCallback: (callback: OHOSWindowRequestCallback) => boolean;
 
-export const bindNode: (id: string, node: FrameNode) => void;
+export const attachWindowSurface: (node: FrameNode, windowId: number) => void;
 
-export const unbindNode: (id: string) => void;
+export const detachWindowSurface: (windowId: number) => void;
+
+export const notifyWindowReady: (sdlWindowId: number, ohosWindowId: number) => void;

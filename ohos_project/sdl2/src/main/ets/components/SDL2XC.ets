@@ -1,4 +1,4 @@
-import sdl2 from 'libsdl2.so'
+import { attachWindowSurface, detachWindowSurface } from 'libsdl2.so'
 
 @ComponentV2
 export struct SDL2XC {
@@ -21,10 +21,18 @@ export struct SDL2XC {
         if (!this.xcNode) {
           return;
         }
-        sdl2.bindNode(this.getComponentId(), this.xcNode);
+        try {
+          attachWindowSurface(this.xcNode, this.windowId);
+        } catch (err) {
+          console.error(`attachWindowSurface(${this.windowId}) failed: ${err.message}`);
+        }
       })
       .onDetach(() => {
-        sdl2.unbindNode(this.getComponentId());
+        try {
+          detachWindowSurface(this.windowId);
+        } catch (err) {
+          console.error(`detachWindowSurface(${this.windowId}) failed: ${err.message}`);
+        }
       })
   }
 }
