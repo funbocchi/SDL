@@ -40,6 +40,13 @@
 #include <android/log.h>
 #endif
 
+#if defined(__OHOS__)
+#include <hilog/log.h>
+#ifndef SDL_OHOS_LOG_DOMAIN
+#define SDL_OHOS_LOG_DOMAIN 0x3200
+#endif
+#endif
+
 #include "stdlib/SDL_vacopy.h"
 
 /* The size of the stack buffer to use for rendering log messages. */
@@ -101,6 +108,19 @@ static int SDL_android_priority[SDL_NUM_LOG_PRIORITIES] = {
     ANDROID_LOG_FATAL
 };
 #endif /* __ANDROID__ */
+
+#ifdef __OHOS__
+static const LogLevel SDL_ohos_priority[SDL_NUM_LOG_PRIORITIES] = {
+    LOG_DEBUG, /* UNKNOWN */
+    LOG_DEBUG, /* SDL_LOG_PRIORITY_VERBOSE */
+    LOG_DEBUG,
+    LOG_INFO,
+    LOG_WARN,
+    LOG_ERROR,
+    LOG_FATAL /* SDL_LOG_PRIORITY_CRITICAL */
+};
+SDL_COMPILE_TIME_ASSERT(ohos_priority, SDL_arraysize(SDL_ohos_priority) == SDL_NUM_LOG_PRIORITIES);
+#endif /* __OHOS__ */
 
 void SDL_LogInit(void)
 {
@@ -369,7 +389,7 @@ void SDL_LogMessage(int category, SDL_LogPriority priority, SDL_PRINTF_FORMAT_ST
     va_end(ap);
 }
 
-#ifdef __ANDROID__
+#if defined(__ANDROID__) || defined(__OHOS__)
 static const char *GetCategoryPrefix(int category)
 {
     if (category < SDL_LOG_CATEGORY_RESERVED1) {
@@ -380,7 +400,7 @@ static const char *GetCategoryPrefix(int category)
     }
     return "CUSTOM";
 }
-#endif /* __ANDROID__ */
+#endif /* __ANDROID__ || __OHOS__ */
 
 void SDL_LogMessageV(int category, SDL_LogPriority priority, const char *fmt, va_list ap)
 {
@@ -555,6 +575,12 @@ static void SDLCALL SDL_LogOutput(void *userdata, int category, SDL_LogPriority 
         SDL_NSLog(SDL_priority_prefixes[priority], message);
         return;
     }
+#elif defined(__OHOS__)
+    {
+        char tag[32];
+        SDL_snprintf(tag, SDL_arraysize(tag), "SDL/%s", GetCategoryPrefix(category));
+        OH_LOG_Print(LOG_APP, SDL_ohos_priority[priority], SDL_OHOS_LOG_DOMAIN, tag, "%{public}s", message);
+    }
 #elif defined(__PSP__) || defined(__PS2__)
     {
         FILE *pFile;
@@ -583,7 +609,7 @@ static void SDLCALL SDL_LogOutput(void *userdata, int category, SDL_LogPriority 
         }
     }
 #endif
-#if defined(HAVE_STDIO_H) && \
+#if defined(HAVE_STDIO_H) && !defined(__OHOS__) && \
     !(defined(__APPLE__) && (defined(SDL_VIDEO_DRIVER_COCOA) || defined(SDL_VIDEO_DRIVER_UIKIT)))
     fprintf(stderr, "%s: %s\n", SDL_priority_prefixes[priority], message);
 #ifdef __NACL__
