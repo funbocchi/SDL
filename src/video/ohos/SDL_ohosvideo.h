@@ -35,26 +35,31 @@ typedef struct
     SDL_bool events_ready;
 } SDL_VideoData;
 
+/**
+ * @brief based on NativeDisplayManager_DisplayInfo,
+ *        describes the information about a display
+ */
 typedef struct
 {
     Uint32 id;
 
-    int physical_width;
-    int physical_height;
+    Sint32 width, height;
 
-    Uint32 available_width;
-    Uint32 available_height;
+    Sint32 physical_width, physical_height;
+
+    Uint32 refresh_rate;
+
+    Uint32 available_width, available_height;
 
     float density_dpi;
+
     float density_pixels;
 
     float scaled_density;
 
-    float x_dpi;
-    float y_dpi;
+    float x_dpi, y_dpi;
 
-    int x_offset;
-    int y_offset;
+    Sint32 x_offset, y_offset;
 
     NativeDisplayManager_Rotation rotation;
 
@@ -62,6 +67,8 @@ typedef struct
 
     NativeDisplayManager_Orientation orientation;
 } SDL_DisplayData;
+
+extern float OHOS_Display_GetDensityPixels(SDL_Window *window);
 
 extern const char *OHOS_Tool_DisplayManagerErrorToString(NativeDisplayManager_ErrorCode code);
 

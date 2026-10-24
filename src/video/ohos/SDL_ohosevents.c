@@ -23,14 +23,25 @@
 
 #ifdef SDL_VIDEO_DRIVER_OHOS
 
-#include "SDL_ohosvideo.h"
+#include "SDL_ohosevents.h"
 
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
 #include <unistd.h>
 
-#include "SDL_ohosevents.h"
+#include "SDL_ohosvideo.h"
+#include "SDL_ohoswindow.h"
+#ifdef SDL_VIDEO_OPENGL_EGL
+#include "SDL_ohosgles.h"
+#endif
+
+Uint32 g_ohos_event_base;
+
+void OHOS_Event_Register(void)
+{
+    g_ohos_event_base = SDL_RegisterEvents(OHOS_EVENT_COUNT);
+}
 
 static void OHOS_Tool_DrainWakeup(int fd)
 {
@@ -42,6 +53,22 @@ static void OHOS_Tool_DrainWakeup(int fd)
 
 void OHOS_PumpEvents(_THIS)
 {
+    SDL_Event event;
+
+    if (g_ohos_event_base == (Uint32)-1) {
+        SDL_LogError(SDL_LOG_CATEGORY_VIDEO, "g_ohos_event_base invalid");
+        return;
+    }
+
+    while (SDL_PeepEvents(&event, 1, SDL_GETEVENT, g_ohos_event_base, g_ohos_event_base + OHOS_EVENT_COUNT - 1) > 0) {
+        switch (event.type - g_ohos_event_base) {
+        case OHOS_EVENT_WINDOW:
+            OHOS_Window_HandleEvents(_this, &event);
+            break;
+        case OHOS_EVENT_GL:
+            break;
+        }
+    }
 }
 
 void OHOS_SendWakeupEvent(_THIS, SDL_Window *window)
@@ -80,10 +107,7 @@ int OHOS_WaitEventTimeout(_THIS, int timeout)
     if (ret == 0) {
         return 0;
     }
-    if (errno == EINTR) {
-        return 1;
-    }
-    return -1;
+    return (errno == EINTR) ? 1 : -1;
 }
 
 #endif /* SDL_VIDEO_DRIVER_OHOS */

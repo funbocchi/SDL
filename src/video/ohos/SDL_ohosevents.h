@@ -26,11 +26,25 @@
 
 #include "../SDL_sysvideo.h"
 
+typedef enum
+{
+    OHOS_EVENT_WINDOW,
+    OHOS_EVENT_GL,
+    OHOS_EVENT_COUNT
+} OHOSEventType;
+
+/* Hook */
+
 extern void OHOS_PumpEvents(_THIS);
 
 extern void OHOS_SendWakeupEvent(_THIS, SDL_Window *window);
 
 extern int OHOS_WaitEventTimeout(_THIS, int timeout);
+
+/* Private */
+extern void OHOS_Event_Register(void);
+
+extern Uint32 g_ohos_event_base;
 
 #endif /* SDL_OHOSEVENTS_H */
 

@@ -164,6 +164,7 @@ export class SDLWindowManager {
       case OHOSWindowCommand.OHOS_WINDOW_CMD_DESTROY:
         break;
       case OHOSWindowCommand.OHOS_WINDOW_CMD_SET_TITLE:
+        await this.setWindowTitle(request.id, request.title);
         break;
       case OHOSWindowCommand.OHOS_WINDOW_CMD_SET_ICON:
         break;
@@ -176,8 +177,10 @@ export class SDLWindowManager {
       case OHOSWindowCommand.OHOS_WINDOW_CMD_SET_MAXIMUM_SIZE:
         break;
       case OHOSWindowCommand.OHOS_WINDOW_CMD_SHOW:
+        await this.showWindow(request.id);
         break;
       case OHOSWindowCommand.OHOS_WINDOW_CMD_HIDE:
+        await this.hideWindow(request.id);
         break;
       case OHOSWindowCommand.OHOS_WINDOW_CMD_RAISE:
         break;
@@ -230,26 +233,31 @@ export class SDLWindowManager {
         await win.minimize();
         await new Promise<void>((resolve: () => void) => setTimeout(resolve, 500));
         await win.loadContentByName(this.pageName, storage);
-        await this.setWindowTitle(request.id, request.title);
-        await this.setWindowBordered(request.id, request.borderless, request.w, request.h, request.allowHighdpi);
+        console.warn(`createWindow(${request.id}): content loaded`);
         this.mainWindowId = request.id;
       } else {
-        const options: window.SubWindowOptions = {
-          title: request.title, decorEnabled: !request.borderless
+        let options: window.SubWindowOptions = {
+          title: "undefined sdl sub window",
+          decorEnabled: !request.borderless
         }
         win = await this.windowStage.createSubWindowWithOptions(this.buildSubWindowName(request.id), options);
         this.windows.set(request.id, win);
+        await win.loadContentByName(this.pageName, storage);
+        console.warn(`createWindow(${request.id}): content loaded`);
       }
+      await this.setWindowTitle(request.id, request.title);
+      await this.setWindowBordered(request.id, request.borderless, request.w, request.h, request.allowHighdpi);
       await this.setWindowPos(request.id, request.x, request.y, request.allowHighdpi, request.w, request.h);
-
       await this.setWindowSize(request.id, request.w, request.h, request.allowHighdpi);
 
+      console.warn(`createWindow(${request.id}): before notifyWindowReady`);
       notifyWindowReady(request.id, win.getWindowProperties()
         .id);
+      console.warn(`createWindow(${request.id}): after notifyWindowReady`);
     } catch (err) {
+      console.error(`createWindow(${request.id}) failed: ${err.message}`);
     }
   }
-
   //
   private async setWindowTitle(id: number, title: string): Promise<void> {
     const win = this.windows.get(id);
@@ -328,14 +336,29 @@ export class SDLWindowManager {
   }
   //
   public async showWindow(id: number): Promise<void> {
+    const win = this.windows.get(id);
+    if (!win) {
+      console.warn(`setWindowTitle: window ${id} not found, ignored`);
+      return;
+    }
     try {
+      if (id === this.mainWindowId) {
+        await win.restore();
+      } else {
+        await win.showWindow();
+      }
     } catch (err) {
     }
   }
   //
   public async hideWindow(id: number): Promise<void> {
+    const win = this.windows.get(id);
+    if (!win) {
+      console.warn(`setWindowTitle: window ${id} not found, ignored`);
+      return;
+    }
     try {
-      await this.minimizeWindow(id);
+      await win.minimize();
     } catch (err) {
     }
   }

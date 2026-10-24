@@ -23,17 +23,27 @@
 
 #ifdef SDL_VIDEO_DRIVER_OHOS
 
+#include "SDL_ohoswindow.h"
+
 typedef struct OH_PixelmapNative OH_PixelmapNative;
 
 #include <ace/xcomponent/native_interface_xcomponent.h>
 #include <arkui/native_interface.h>
 #include <arkui/native_node.h>
 #include <arkui/native_node_napi.h>
+#include <limits.h>
 
 #include "../SDL_sysvideo.h"
+#include "SDL_events.h"
+#include "SDL_timer.h"
 
+#include "../../events/SDL_windowevents_c.h"
+
+#include "SDL_ohosevents.h"
 #include "SDL_ohosvideo.h"
-#include "SDL_ohoswindow.h"
+#ifdef SDL_VIDEO_OPENGL_EGL
+#include "SDL_ohosgles.h"
+#endif
 
 typedef enum
 {
@@ -63,6 +73,13 @@ typedef enum
     OHOS_WINDOW_CMD_SET_KEYBOARD_GRAB = 23,
     OHOS_WINDOW_CMD_COUNT
 } OHOS_WindowCommand;
+
+typedef enum
+{
+    OHOS_WINDOW_EVENT_SURFACE_CREATED,
+    OHOS_WINDOW_EVENT_SURFACE_CHANGED,
+    OHOS_WINDOW_EVENT_SURFACE_DESTROYED
+} OHOS_WindowEventCode;
 
 typedef struct
 {
@@ -134,6 +151,7 @@ static void TSF_CallWindowRequest(napi_env env, napi_value cb, void *context, vo
         Napi_SetNamedProperty(env, obj, "title", Napi_CreateString(env, req->title ? req->title : ""))) {
         goto endfunc;
     }
+    SDL_LogInfo(SDL_LOG_CATEGORY_VIDEO, "title: %s", req->title);
 
     if (Napi_SetNamedProperty(env, obj, "x", Napi_CreateNumber(env, req->x)) ||
         Napi_SetNamedProperty(env, obj, "y", Napi_CreateNumber(env, req->y)) ||
@@ -260,6 +278,11 @@ static void OHOS_Window_FreeData(SDL_WindowData *data)
     if (data->create_lock) {
         SDL_DestroyMutex(data->create_lock);
     }
+#ifdef SDL_VIDEO_OPENGL_EGL
+    if (data->egl_lock) {
+        SDL_DestroyMutex(data->egl_lock);
+    }
+#endif
     SDL_free(data->registry_entry);
     SDL_free(data);
 }
@@ -393,54 +416,59 @@ int OHOS_CreateWindow(_THIS, SDL_Window *window)
     OHOS_WindowRequest *req = NULL;
     Uint32 start;
     SDL_bool completed = SDL_FALSE;
-    SDL_bool registered = SDL_FALSE;
 
-    if (!_this || !window) {
-        return SDL_SetError("invalid _this || window");
-    }
-
-    req = (OHOS_WindowRequest *)SDL_calloc(1, sizeof(OHOS_WindowRequest));
-    if (!req) {
+    if (!(req = (OHOS_WindowRequest *)SDL_calloc(1, sizeof(OHOS_WindowRequest)))) {
         return SDL_OutOfMemory();
     }
 
-    data = (SDL_WindowData *)SDL_calloc(1, sizeof(SDL_WindowData));
-    if (!data) {
+    if (!(data = (SDL_WindowData *)SDL_calloc(1, sizeof(SDL_WindowData)))) {
         SDL_free(req);
         return SDL_OutOfMemory();
     }
 
     data->create_lock = SDL_CreateMutex();
     data->create_cond = SDL_CreateCond();
+#ifdef SDL_VIDEO_OPENGL_EGL
+    data->egl_lock = SDL_CreateMutex();
+#endif
     if (!data->create_lock || !data->create_cond) {
         retval = SDL_OutOfMemory();
         goto errfunc;
     }
+#ifdef SDL_VIDEO_OPENGL_EGL
+    if (!data->egl_lock) {
+        retval = SDL_OutOfMemory();
+        goto errfunc;
+    }
+    data->current_surface = EGL_NO_SURFACE;
+    data->pending_egl_surface = EGL_NO_SURFACE;
+    data->pbuffer_surface = EGL_NO_SURFACE;
+    data->current_context = EGL_NO_CONTEXT;
+#endif
 
     if ((retval = OHOS_Tool_ParseWindowRequest(window, OHOS_WINDOW_CMD_CREATE, req))) {
         goto errfunc;
     }
+
+    data->create_flags = window->flags;
+    data->video_device = _this;
 
     window->driverdata = data;
 
     if ((retval = OHOS_Window_Register(data, window->id))) {
         goto errfunc;
     }
-    registered = SDL_TRUE;
 
     if ((retval = Napi_CallThreadSafeFunction(window_request_tsf, req))) {
         SDL_free((void *)req->title);
         req = NULL;
         OHOS_Window_Unregister(data);
         data = NULL;
-        registered = SDL_FALSE;
         goto errfunc;
     }
-
     req = NULL;
 
     start = SDL_GetTicks();
-
     SDL_LockMutex(data->create_lock);
     while (!data->create_done) {
         Uint32 elapsed = SDL_GetTicks() - start;
@@ -465,10 +493,9 @@ int OHOS_CreateWindow(_THIS, SDL_Window *window)
     return 0;
 
 errfunc:
-    if (registered && data) {
+    if (data) {
         OHOS_Window_Unregister(data);
         data = NULL;
-        registered = SDL_FALSE;
     }
     if (data) {
         OHOS_Window_FreeData(data);
@@ -483,7 +510,8 @@ errfunc:
 
 int OHOS_CreateWindowFrom(_THIS, SDL_Window *window, const void *data)
 {
-    return 0;
+    SDL_LogError(SDL_LOG_CATEGORY_VIDEO, "CreateWindowFrom not supported");
+    return -1;
 }
 
 static void OHOS_Window_TryCompleteCreate(SDL_WindowData *data)
@@ -493,11 +521,25 @@ static void OHOS_Window_TryCompleteCreate(SDL_WindowData *data)
     }
 
     SDL_LockMutex(data->create_lock);
-    if (!data->create_done && data->window_ready && data->surface_ready) {
+    if (!data->create_done && data->window_ready && data->attach_ready) {
         data->create_done = SDL_TRUE;
+        SDL_LogInfo(SDL_LOG_CATEGORY_VIDEO, "TryCompleteCreate: signaled");
         SDL_CondSignal(data->create_cond);
     }
     SDL_UnlockMutex(data->create_lock);
+}
+
+static void OHOS_Window_MarkAttachReady(SDL_WindowData *data)
+{
+    if (!data || !data->create_lock) {
+        return;
+    }
+
+    SDL_LockMutex(data->create_lock);
+    data->attach_ready = SDL_TRUE;
+    SDL_UnlockMutex(data->create_lock);
+
+    OHOS_Window_TryCompleteCreate(data);
 }
 
 static void OHOS_Window_MarkWindowReady(SDL_WindowData *data)
@@ -522,8 +564,7 @@ napi_value OHOS_Window_NotifyWindowReady(napi_env env, napi_callback_info info)
     napi_status status;
     SDL_WindowData *data = NULL;
 
-    status = napi_get_cb_info(env, info, &argc, args, NULL, NULL);
-    if (status != napi_ok) {
+    if ((status = napi_get_cb_info(env, info, &argc, args, NULL, NULL)) != napi_ok) {
         Napi_ThrowError(env, status, "notifyWindowReady: get_cb_info failed");
         return NULL;
     }
@@ -533,25 +574,23 @@ napi_value OHOS_Window_NotifyWindowReady(napi_env env, napi_callback_info info)
         return NULL;
     }
 
-    status = napi_get_value_uint32(env, args[0], &sdl_window_id);
-    if (status != napi_ok) {
+    if ((status = napi_get_value_uint32(env, args[0], &sdl_window_id)) != napi_ok) {
         Napi_ThrowError(env, status, "notifyWindowReady: sdlWindowId is not a number");
         return NULL;
     }
 
-    status = napi_get_value_uint32(env, args[1], &ohos_window_id);
-    if (status != napi_ok) {
+    if ((status = napi_get_value_uint32(env, args[1], &ohos_window_id)) != napi_ok) {
         Napi_ThrowError(env, status, "notifyWindowReady: ohosWindowId is not a number");
         return NULL;
     }
 
-    data = OHOS_Window_Acquire(sdl_window_id);
-    if (!data) {
+    if (!(data = OHOS_Window_Acquire(sdl_window_id))) {
         Napi_ThrowError(env, napi_invalid_arg, "notifyWindowReady: SDL window not found");
         return NULL;
     }
 
     data->window_id = ohos_window_id;
+    SDL_LogInfo(SDL_LOG_CATEGORY_VIDEO, "notifyWindowReady: window %u ohos %u", sdl_window_id, ohos_window_id);
     OHOS_Window_MarkWindowReady(data);
     OHOS_Window_Release(data);
 
@@ -565,44 +604,93 @@ static void OHOS_Tool_EnsureNodeAPI(void)
     }
 }
 
-static void OHOS_Window_MarkSurfaceReady(SDL_WindowData *data)
-{
-    if (!data || !data->create_lock) {
-        return;
-    }
-
-    SDL_LockMutex(data->create_lock);
-    data->surface_ready = SDL_TRUE;
-    SDL_UnlockMutex(data->create_lock);
-
-    OHOS_Window_TryCompleteCreate(data);
-}
-
 static void OnSurfaceCreatedCallback(OH_ArkUI_SurfaceHolder *holder)
 {
     OHNativeWindow *native_window = NULL;
     SDL_WindowData *data = NULL;
     Uint32 id;
+    SDL_Event event;
 
     id = (Uint32)(intptr_t)(OH_ArkUI_SurfaceHolder_GetUserData(holder));
-    native_window = OH_ArkUI_XComponent_GetNativeWindow(holder);
-    if (!native_window) {
+    if (!(native_window = OH_ArkUI_XComponent_GetNativeWindow(holder))) {
         return;
     }
 
+    if (!(data = OHOS_Window_Acquire(id))) {
+        return;
+    }
+
+    SDL_LogInfo(SDL_LOG_CATEGORY_VIDEO, "OnSurfaceCreated: window %u native=%p", id, (void *)native_window);
+
+    SDL_LockMutex(data->create_lock);
+    data->native_window = native_window;
+    data->surface_ready = SDL_TRUE;
+    event.type = g_ohos_event_base + OHOS_EVENT_WINDOW;
+    event.user.code = OHOS_WINDOW_EVENT_SURFACE_CREATED;
+    event.user.windowID = id;
+    SDL_UnlockMutex(data->create_lock);
+    SDL_PushEvent(&event);
+
+    OHOS_SendWakeupEvent(data->video_device, NULL);
+    OHOS_Window_Release(data);
+}
+
+static void OnSurfaceChangedCallback(OH_ArkUI_SurfaceHolder *holder, uint64_t width, uint64_t height)
+{
+    Uint32 id;
+    SDL_WindowData *data;
+    SDL_Event event;
+
+    id = (Uint32)(intptr_t)OH_ArkUI_SurfaceHolder_GetUserData(holder);
     data = OHOS_Window_Acquire(id);
     if (!data) {
         return;
     }
 
-    data->native_window = native_window;
-    OHOS_Window_MarkSurfaceReady(data);
+    SDL_LogInfo(SDL_LOG_CATEGORY_VIDEO,
+                "OnSurfaceChanged: window %u %ux%u",
+                id, (unsigned int)width, (unsigned int)height);
+
+    SDL_LockMutex(data->create_lock);
+    SDL_zero(event);
+    event.type = g_ohos_event_base + OHOS_EVENT_WINDOW;
+    event.user.windowID = id;
+    event.user.code = OHOS_WINDOW_EVENT_SURFACE_CHANGED;
+    event.user.data1 = (void *)(uintptr_t)width;
+    event.user.data2 = (void *)(uintptr_t)height;
+    SDL_UnlockMutex(data->create_lock);
+    SDL_PushEvent(&event);
+
+    OHOS_SendWakeupEvent(data->video_device, NULL);
     OHOS_Window_Release(data);
 }
 
-static void OnSurfaceChangedCallback(OH_ArkUI_SurfaceHolder *holder, uint64_t width, uint64_t height) {}
+static void OnSurfaceDestroyedCallback(OH_ArkUI_SurfaceHolder *holder)
+{
+    Uint32 id;
+    SDL_WindowData *data;
+    SDL_Event event;
 
-static void OnSurfaceDestroyedCallback(OH_ArkUI_SurfaceHolder *holder) {}
+    id = (Uint32)(intptr_t)OH_ArkUI_SurfaceHolder_GetUserData(holder);
+    data = OHOS_Window_Acquire(id);
+    if (!data) {
+        return;
+    }
+
+    SDL_Log("OnSurfaceDestroyed: window %u", id);
+
+    SDL_LockMutex(data->create_lock);
+    data->native_window = NULL;
+    data->surface_ready = SDL_FALSE;
+    event.type = g_ohos_event_base + OHOS_EVENT_WINDOW;
+    event.user.code = OHOS_WINDOW_EVENT_SURFACE_DESTROYED;
+    event.user.windowID = id;
+    SDL_UnlockMutex(data->create_lock);
+    SDL_PushEvent(&event);
+
+    OHOS_SendWakeupEvent(data->video_device, NULL);
+    OHOS_Window_Release(data);
+}
 
 static void OnSurfaceShowCallback(OH_ArkUI_SurfaceHolder *holder) {}
 
@@ -630,6 +718,12 @@ napi_value OHOS_NodeContent_AttachWindowSurface(napi_env env, napi_callback_info
         return NULL;
     }
 
+    OHOS_Tool_EnsureNodeAPI();
+    if (!g_node_api) {
+        Napi_ThrowError(env, napi_invalid_arg, "attachWindowSurface: failed to initialize node env");
+        return NULL;
+    }
+
     if (OH_ArkUI_GetNodeHandleFromNapiValue(env, args[0], &node) != ARKUI_ERROR_CODE_NO_ERROR || node == NULL) {
         Napi_ThrowError(env, napi_generic_failure, "attachWindowSurface: invalid FrameNode");
         return NULL;
@@ -640,8 +734,6 @@ napi_value OHOS_NodeContent_AttachWindowSurface(napi_env env, napi_callback_info
         Napi_ThrowError(env, status, "attachWindowSurface: windowId is not a number");
         return NULL;
     }
-
-    OHOS_Tool_EnsureNodeAPI();
 
     if (!(holder = OH_ArkUI_SurfaceHolder_Create(node))) {
         Napi_ThrowError(env, napi_invalid_arg, "attachWindowSurface: failed to create surfaceHolder");
@@ -671,6 +763,8 @@ napi_value OHOS_NodeContent_AttachWindowSurface(napi_env env, napi_callback_info
 
     data->holder = holder;
     data->surface_callback = callback;
+    SDL_LogInfo(SDL_LOG_CATEGORY_VIDEO, "attachWindowSurface: holder created for window %u", window_id);
+    OHOS_Window_MarkAttachReady(data);
     OHOS_Window_Release(data);
 
     return Napi_CreateUndefined(env);
@@ -685,11 +779,11 @@ void OHOS_DestroyWindow(_THIS, SDL_Window *window)
     }
 
     data = (SDL_WindowData *)window->driverdata;
-    window->driverdata = NULL;
     if (!data) {
         return;
     }
 
+    window->driverdata = NULL;
     OHOS_Window_Unregister(data);
 }
 
@@ -736,7 +830,6 @@ napi_value OHOS_NodeContent_DetachWindowSurface(napi_env env, napi_callback_info
     }
     if (data->create_lock) {
         SDL_LockMutex(data->create_lock);
-        data->native_window = NULL;
         data->surface_ready = SDL_FALSE;
         SDL_UnlockMutex(data->create_lock);
     }
@@ -748,22 +841,308 @@ napi_value OHOS_NodeContent_DetachWindowSurface(napi_env env, napi_callback_info
 
 void OHOS_SetWindowTitle(_THIS, SDL_Window *window)
 {
+    OHOS_WindowRequest *req = NULL;
+    if (!_this || !window) {
+        SDL_SetError("invalid _this || window");
+        return;
+    }
+
+    req = (OHOS_WindowRequest *)SDL_calloc(1, sizeof(OHOS_WindowRequest));
+    if (!req) {
+        SDL_OutOfMemory();
+        return;
+    }
+
+    if (OHOS_Tool_ParseWindowRequest(window, OHOS_WINDOW_CMD_SET_TITLE, req)) {
+        SDL_free(req);
+        req = NULL;
+        return;
+    }
+
+    if (Napi_CallThreadSafeFunction(window_request_tsf, req)) {
+        SDL_free((void *)req->title);
+        req = NULL;
+        return;
+    }
+}
+
+void OHOS_SetWindowIcon(SDL_VideoDevice *_this, SDL_Window *window, SDL_Surface *icon)
+{
+    SDL_LogError(SDL_LOG_CATEGORY_VIDEO, "SetWindowIcon not surported");
 }
 
 void OHOS_SetWindowPosition(_THIS, SDL_Window *window)
 {
+    OHOS_WindowRequest *req = NULL;
+    if (!_this || !window) {
+        SDL_SetError("invalid _this || window");
+        return;
+    }
+
+    req = (OHOS_WindowRequest *)SDL_calloc(1, sizeof(OHOS_WindowRequest));
+    if (!req) {
+        SDL_OutOfMemory();
+        return;
+    }
+
+    if (OHOS_Tool_ParseWindowRequest(window, OHOS_WINDOW_CMD_SET_POSITION, req)) {
+        SDL_free(req);
+        req = NULL;
+        return;
+    }
+
+    if (Napi_CallThreadSafeFunction(window_request_tsf, req)) {
+        SDL_free((void *)req->title);
+        req = NULL;
+        return;
+    }
 }
 
 void OHOS_SetWindowSize(_THIS, SDL_Window *window)
 {
+    OHOS_WindowRequest *req = NULL;
+    if (!_this || !window) {
+        SDL_SetError("invalid _this || window");
+        return;
+    }
+
+    req = (OHOS_WindowRequest *)SDL_calloc(1, sizeof(OHOS_WindowRequest));
+    if (!req) {
+        SDL_OutOfMemory();
+        return;
+    }
+
+    if (OHOS_Tool_ParseWindowRequest(window, OHOS_WINDOW_CMD_SET_SIZE, req)) {
+        SDL_free(req);
+        req = NULL;
+        return;
+    }
+
+    if (Napi_CallThreadSafeFunction(window_request_tsf, req)) {
+        SDL_free((void *)req->title);
+        req = NULL;
+        return;
+    }
+}
+
+void OHOS_SetWindowMinimumSize(SDL_VideoDevice *_this, SDL_Window *window)
+{
+    OHOS_WindowRequest *req = NULL;
+    if (!_this || !window) {
+        SDL_SetError("invalid _this || window");
+        return;
+    }
+
+    req = (OHOS_WindowRequest *)SDL_calloc(1, sizeof(OHOS_WindowRequest));
+    if (!req) {
+        SDL_OutOfMemory();
+        return;
+    }
+
+    if (OHOS_Tool_ParseWindowRequest(window, OHOS_WINDOW_CMD_SET_MINIMUM_SIZE, req)) {
+        SDL_free(req);
+        req = NULL;
+        return;
+    }
+
+    if (Napi_CallThreadSafeFunction(window_request_tsf, req)) {
+        SDL_free((void *)req->title);
+        req = NULL;
+        return;
+    }
+}
+
+void OHOS_SetWindowMaximumSize(SDL_VideoDevice *_this, SDL_Window *window)
+{
+    OHOS_WindowRequest *req = NULL;
+    if (!_this || !window) {
+        SDL_SetError("invalid _this || window");
+        return;
+    }
+
+    req = (OHOS_WindowRequest *)SDL_calloc(1, sizeof(OHOS_WindowRequest));
+    if (!req) {
+        SDL_OutOfMemory();
+        return;
+    }
+
+    if (OHOS_Tool_ParseWindowRequest(window, OHOS_WINDOW_CMD_SET_MAXIMUM_SIZE, req)) {
+        SDL_free(req);
+        req = NULL;
+        return;
+    }
+
+    if (Napi_CallThreadSafeFunction(window_request_tsf, req)) {
+        SDL_free((void *)req->title);
+        req = NULL;
+        return;
+    }
+}
+
+int OHOS_GetWindowBordersSize(SDL_VideoDevice *_this, SDL_Window *window, int *top, int *left, int *bottom, int *right)
+{
+}
+
+void OHOS_GetWindowSizeInPixels(SDL_VideoDevice *_this, SDL_Window *window, int *w, int *h)
+{
+}
+
+int OHOS_GetWindowDisplayIndex(SDL_VideoDevice *_this, SDL_Window *window)
+{
+    int display_index = -1;
+    SDL_VideoDisplay *display = NULL;
+    SDL_DisplayData *data = NULL;
+    SDL_Rect rect;
+
+    rect.x = window->x;
+    rect.y = window->y;
+    if (SDL_WINDOWPOS_ISUNDEFINED(window->x)) {
+        display_index = (window->x & 0xFFFF);
+        if (display_index >= _this->num_displays) {
+            display_index = 0;
+        }
+        display = SDL_GetDisplay(display_index);
+        data = (SDL_DisplayData *)display->driverdata;
+        rect.x = data->x_offset;
+    } else if (SDL_WINDOWPOS_ISCENTERED(window->x)) {
+        display_index = (window->x & 0xFFFF);
+        if (display_index >= _this->num_displays) {
+            display_index = 0;
+        }
+        display = SDL_GetDisplay(display_index);
+        data = (SDL_DisplayData *)display->driverdata;
+        rect.x = data->x_offset + data->width / 2;
+    }
+    display = NULL;
+    data = NULL;
+    display_index = -1;
+    if (SDL_WINDOWPOS_ISUNDEFINED(window->y)) {
+        display_index = (window->y & 0xFFFF);
+        if (display_index >= _this->num_displays) {
+            display_index = 0;
+        }
+        display = SDL_GetDisplay(display_index);
+        data = (SDL_DisplayData *)display->driverdata;
+        rect.y = data->y_offset;
+    } else if (SDL_WINDOWPOS_ISCENTERED(window->y)) {
+        display_index = (window->y & 0xFFFF);
+        if (display_index >= _this->num_displays) {
+            display_index = 0;
+        }
+        display = SDL_GetDisplay(display_index);
+        data = (SDL_DisplayData *)display->driverdata;
+        rect.y = data->y_offset + data->height / 2;
+    }
+    display_index = -1;
+
+    display_index = SDL_GetRectDisplayIndex(&rect);
+
+    return display_index;
 }
 
 void OHOS_ShowWindow(_THIS, SDL_Window *window)
 {
+    OHOS_WindowRequest *req = NULL;
+    if (!_this || !window) {
+        SDL_SetError("invalid _this || window");
+        return;
+    }
+
+    req = (OHOS_WindowRequest *)SDL_calloc(1, sizeof(OHOS_WindowRequest));
+    if (!req) {
+        SDL_OutOfMemory();
+        return;
+    }
+
+    if (OHOS_Tool_ParseWindowRequest(window, OHOS_WINDOW_CMD_SHOW, req)) {
+        SDL_free(req);
+        req = NULL;
+        return;
+    }
+
+    if (Napi_CallThreadSafeFunction(window_request_tsf, req)) {
+        SDL_free((void *)req->title);
+        req = NULL;
+        return;
+    }
 }
 
 void OHOS_HideWindow(_THIS, SDL_Window *window)
 {
+    OHOS_WindowRequest *req = NULL;
+    if (!_this || !window) {
+        SDL_SetError("invalid _this || window");
+        return;
+    }
+
+    req = (OHOS_WindowRequest *)SDL_calloc(1, sizeof(OHOS_WindowRequest));
+    if (!req) {
+        SDL_OutOfMemory();
+        return;
+    }
+
+    if (OHOS_Tool_ParseWindowRequest(window, OHOS_WINDOW_CMD_HIDE, req)) {
+        SDL_free(req);
+        req = NULL;
+        return;
+    }
+
+    if (Napi_CallThreadSafeFunction(window_request_tsf, req)) {
+        SDL_free((void *)req->title);
+        req = NULL;
+        return;
+    }
+}
+
+void OHOS_Window_HandleEvents(_THIS, const SDL_Event *event)
+{
+    SDL_Window *window;
+    SDL_WindowData *data;
+
+    if (!(window = SDL_GetWindowFromID(event->user.windowID))) {
+        SDL_SetError("invalid windowId");
+        SDL_LogError(SDL_LOG_CATEGORY_VIDEO, "OHOS_Window_HandleEvents: %s", SDL_GetError());
+        return;
+    }
+
+    data = (SDL_WindowData *)window->driverdata;
+
+    switch (event->user.code) {
+    case OHOS_WINDOW_EVENT_SURFACE_CREATED:
+        if (OHOS_GL_PreparePendingSurface(_this, window) || OHOS_GL_ActivatePendingSurface(_this, window)) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_VIDEO, "OHOS_WINDOW_EVENT_SURFACE_CREATED: %s", SDL_GetError());
+        }
+        break;
+    case OHOS_WINDOW_EVENT_SURFACE_CHANGED:
+    {
+        Uint64 pw = (Uint64)(uintptr_t)event->user.data1;
+        Uint64 ph = (Uint64)(uintptr_t)event->user.data2;
+        int w, h;
+
+        if (pw == 0 || ph == 0) {
+            break;
+        }
+        if (pw > INT_MAX || ph > INT_MAX) {
+            break;
+        }
+
+        if (window->flags & SDL_WINDOW_ALLOW_HIGHDPI) {
+            float density = OHOS_Display_GetDensityPixels(window);
+            if (density <= 0.0f) {
+                density = 1.0f;
+            }
+            w = (int)SDL_lroundf((float)pw / density);
+            h = (int)SDL_lroundf((float)ph / density);
+        } else {
+            w = (int)pw;
+            h = (int)ph;
+        }
+        SDL_SendWindowEvent(window, SDL_WINDOWEVENT_RESIZED, w, h);
+        break;
+    }
+    case OHOS_WINDOW_EVENT_SURFACE_DESTROYED:
+        break;
+    }
 }
 
 #endif

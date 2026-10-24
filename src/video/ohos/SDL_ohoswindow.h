@@ -26,6 +26,7 @@
 
 #include <native_window/external_window.h>
 
+#include "SDL_events.h"
 #include "SDL_mutex.h"
 #ifdef SDL_VIDEO_OPENGL_EGL
 #include "../SDL_egl_c.h"
@@ -41,25 +42,51 @@ struct OHOS_WindowEntry;
 typedef struct
 {
 #ifdef SDL_VIDEO_OPENGL_EGL
-    EGLSurface egl_surface;
-    EGLContext egl_context;
+    SDL_mutex *egl_lock;
+
+    EGLSurface current_surface;
+
+    EGLSurface pending_egl_surface;
+    EGLSurface pbuffer_surface;
+
+    SDL_GLContext current_context;
+
+    SDL_bool pending_ready;
 #endif
+
     Uint32 window_id;
     Uint32 sdl_window_id;
+
     OH_ArkUI_SurfaceHolder *holder;
     OH_ArkUI_SurfaceCallback *surface_callback;
+
     OHNativeWindow *native_window;
 
     SDL_mutex *create_lock;
     SDL_cond *create_cond;
+
     SDL_bool window_ready;
-    SDL_bool surface_ready;
+    SDL_bool attach_ready;
     SDL_bool create_done;
+
+    /* Used to identify the status of ONNativeWindow */
+    SDL_bool surface_ready;
+
+    /**
+     * @brief snapshot
+     */
+    Uint32 create_flags;
+    SDL_VideoDevice *video_device;
 
     int refs;
     SDL_bool removed;
     struct OHOS_WindowEntry *registry_entry;
 } SDL_WindowData;
+
+/**
+ * @brief Handling custom events
+ */
+extern void OHOS_Window_HandleEvents(_THIS, const SDL_Event *event);
 
 /* * * */
 /* Window lifecycle */
@@ -149,8 +176,17 @@ extern void OHOS_AcceptDragAndDrop(SDL_Window *window, SDL_bool accept);
 
 extern napi_value OHOS_ThreadSafe_RegisterCallWindowRequest(napi_env env, napi_callback_info info);
 extern napi_value OHOS_NodeContent_AttachWindowSurface(napi_env env, napi_callback_info info);
-extern napi_value OHOS_NodeContent_DetachWindowSurface(napi_env env,napi_callback_info info);
+extern napi_value OHOS_NodeContent_DetachWindowSurface(napi_env env, napi_callback_info info);
 extern napi_value OHOS_Window_NotifyWindowReady(napi_env env, napi_callback_info info);
+
+/* * * */
+/**
+ * Others
+ */
+
+extern int OHOS_Window_WaitSurfaceReady(SDL_WindowData *data, Sint32 timeout_ms);
+
+extern void OHOS_Window_PumpSurfaceState(_THIS);
 
 #endif /* SDL_OHOSWINDOW_H */
 
