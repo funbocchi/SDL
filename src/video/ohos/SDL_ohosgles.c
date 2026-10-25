@@ -138,6 +138,8 @@ endfunc:
 int OHOS_GL_MakeCurrent(_THIS, SDL_Window *window, SDL_GLContext context)
 {
     SDL_WindowData *data;
+    SDL_assert(_this != NULL);
+
     SDL_GLContext win_context = EGL_NO_CONTEXT;
     int retval;
     if (!_this) {
@@ -274,137 +276,74 @@ static EGLSurface OHOS_GL_CreatePbufferSurface(_THIS)
 
 int OHOS_GL_PreparePendingSurface(_THIS, SDL_Window *window)
 {
-    SDL_WindowData *data;
-    EGLSurface surface;
+    SDL_WindowData *data = NULL;
+    SDL_assert(_this != NULL);
 
-    if (!_this || !window || !(data = (SDL_WindowData *)window->driverdata) || !(data->egl_lock) || !(data->create_lock)) {
-        return SDL_SetError("invalid params");
+    if (!window || !(data = (SDL_WindowData *)window->driverdata) || !data->general_lock || !data->egl_lock) {
+        return SDL_InvalidParamError("window");
     }
-    SDL_LockMutex(data->create_lock);
-    SDL_LogInfo(SDL_LOG_CATEGORY_VIDEO,
-                "PreparePendingSurface: native_window=%p surface_ready=%d",
-                (void *)data->native_window, data->surface_ready);
-    if (!data->native_window || !data->surface_ready) {
-        SDL_UnlockMutex(data->create_lock);
-        SDL_LogInfo(SDL_LOG_CATEGORY_VIDEO, "OHNativeWindow not ready");
-        goto pbuffer;
-    }
-    SDL_LockMutex(data->egl_lock);
-    surface = data->pending_egl_surface;
-    if (surface != EGL_NO_SURFACE) {
-        SDL_EGL_DestroySurface(_this, surface);
-        data->pending_egl_surface = EGL_NO_SURFACE;
-    }
-    data->pending_ready = SDL_FALSE;
-    surface = SDL_EGL_CreateSurface(_this, (NativeWindowType)data->native_window);
-    if (surface != EGL_NO_SURFACE) {
-        data->pending_ready = SDL_TRUE;
-        data->pending_egl_surface = surface;
-        SDL_LogInfo(SDL_LOG_CATEGORY_VIDEO,
-                    "eglCreateWindowSurface OK: surface=%p", (void *)surface);
-    } else {
-        EGLint red = -1, green = -1, blue = -1, alpha = -1;
-        EGLint surface_type = -1, visual_id = -1;
-        EGLDisplay display = _this->egl_data->egl_display;
-        EGLConfig config = _this->egl_data->egl_config;
-
-        _this->egl_data->eglGetConfigAttrib(display, config, EGL_RED_SIZE, &red);
-        _this->egl_data->eglGetConfigAttrib(display, config, EGL_GREEN_SIZE, &green);
-        _this->egl_data->eglGetConfigAttrib(display, config, EGL_BLUE_SIZE, &blue);
-        _this->egl_data->eglGetConfigAttrib(display, config, EGL_ALPHA_SIZE, &alpha);
-        _this->egl_data->eglGetConfigAttrib(display, config, EGL_SURFACE_TYPE, &surface_type);
-        _this->egl_data->eglGetConfigAttrib(display, config, EGL_NATIVE_VISUAL_ID, &visual_id);
-
-        SDL_LogWarn(SDL_LOG_CATEGORY_VIDEO,
-                    "eglCreateWindowSurface failed: %s "
-                    "(config rgba=%d/%d/%d/%d surface_type=0x%x visual=0x%x)",
-                    SDL_GetError(), red, green, blue, alpha,
-                    (unsigned int)surface_type, (unsigned int)visual_id);
-    }
-    SDL_UnlockMutex(data->egl_lock);
-    SDL_UnlockMutex(data->create_lock);
-
-pbuffer:
-    SDL_LockMutex(data->egl_lock);
-    surface = data->pbuffer_surface;
-    if (surface != EGL_NO_SURFACE) {
+    {
+        SDL_LockMutex(data->egl_lock);
+        if (data->pbuffer_surface == EGL_NO_SURFACE) {
+            data->pbuffer_surface = SDL_EGL_CreateOffscreenSurface(_this, OHOS_GL_PBUFFER_WIDTH, OHOS_GL_PBUFFER_HEIGHT);
+            SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "Attemp to create offscreen surface: %p", data->pbuffer_surface);
+        }
         SDL_UnlockMutex(data->egl_lock);
-        return 0;
     }
-    surface = SDL_EGL_CreateOffscreenSurface(_this, OHOS_GL_PBUFFER_WIDTH, OHOS_GL_PBUFFER_HEIGHT);
-    if (surface == EGL_NO_SURFACE) {
-        SDL_LogWarn(SDL_LOG_CATEGORY_VIDEO,
-                    "eglCreatePbufferSurface failed: %s", SDL_GetError());
-        SDL_UnlockMutex(data->egl_lock);
-        return SDL_SetError("failed to create offscreenSurface");
+    {
+        SDL_LockMutex(data->general_lock);
+        if (data->native_window) {
+            SDL_LockMutex(data->egl_lock);
+            if (data->pending_surface) {
+                SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "Destroy the failed Surface and empty");
+                SDL_EGL_DestroySurface(_this, data->pending_surface);
+                data->pending_surface = EGL_NO_SURFACE;
+            }
+            data->pending_surface = SDL_EGL_CreateSurface(_this, (NativeWindowType)data->native_window);
+            SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "Attempt to create surface: %p", data->pending_surface);
+            SDL_UnlockMutex(data->egl_lock);
+        } else {
+            SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "Failed to create surface, OHNativeWindow is unavailable.");
+        }
+        SDL_UnlockMutex(data->general_lock);
     }
-    data->pbuffer_surface = surface;
-    SDL_LogInfo(SDL_LOG_CATEGORY_VIDEO,
-                "eglCreatePbufferSurface OK: surface=%p", (void *)surface);
-    SDL_UnlockMutex(data->egl_lock);
     return 0;
 }
 
 int OHOS_GL_ActivatePendingSurface(_THIS, SDL_Window *window)
 {
-    SDL_WindowData *data;
-    SDL_GLContext context;
-    EGLSurface surface;
+    SDL_WindowData *data = NULL;
     int retval = 0;
+    SDL_assert(_this != NULL);
 
-    if (!_this || !window || !(data = (SDL_WindowData *)window->driverdata) || !(data->egl_lock)) {
-        return SDL_SetError("invalid params");
+    if (!window || !(data = (SDL_WindowData *)window->driverdata) || !data->egl_lock) {
+        return SDL_InvalidParamError("window");
     }
-
-    SDL_LockMutex(data->egl_lock);
-    if ((context = data->current_context) == EGL_NO_CONTEXT) {
-        SDL_UnlockMutex(data->egl_lock);
-        SDL_LogWarn(SDL_LOG_CATEGORY_VIDEO, "eglContext not ready");
-        return 0;
-    }
-    SDL_LogInfo(SDL_LOG_CATEGORY_VIDEO,
-                "ActivatePendingSurface: context=%p pending=%p current=%p pbuffer=%p",
-                (void *)context,
-                (void *)data->pending_egl_surface,
-                (void *)data->current_surface,
-                (void *)data->pbuffer_surface);
-    surface = data->pending_egl_surface;
-    if (surface != EGL_NO_SURFACE && data->pending_ready) {
-        if (SDL_EGL_MakeCurrent(_this, surface, context)) {
-            data->pending_ready = SDL_FALSE;
-            SDL_LogWarn(SDL_LOG_CATEGORY_VIDEO, "%s", SDL_GetError());
-            goto pbuffer;
+    {
+        SDL_LockMutex(data->egl_lock);
+        if (data->pending_surface == EGL_NO_SURFACE) {
+            SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "No valid surface");
         } else {
-            surface = data->current_surface;
-            data->current_surface = data->pending_egl_surface;
-            data->pending_egl_surface = EGL_NO_SURFACE;
-            data->pending_ready = SDL_FALSE;
-            if (surface != data->pbuffer_surface) {
-                SDL_EGL_DestroySurface(_this, surface);
+            if (data->current_context == EGL_NO_CONTEXT) {
+                goto swapSurface;
             }
-            SDL_UnlockMutex(data->egl_lock);
-            SDL_LogInfo(SDL_LOG_CATEGORY_VIDEO, "pending_surface in effected");
-            return 0;
+            if (data->current_context == SDL_GL_GetCurrentContext()) {
+                retval = SDL_EGL_MakeCurrent(_this, data->pending_surface, data->current_context);
+                if (retval) {
+                    goto endfunc;
+                }
+            }
+        swapSurface:
+            if (data->current_surface != EGL_NO_SURFACE) {
+                SDL_EGL_DestroySurface(_this, data->current_surface);
+            }
+            data->current_surface = data->pending_surface;
+            data->pending_surface = EGL_NO_SURFACE;
         }
-    }
-    SDL_LogWarn(SDL_LOG_CATEGORY_VIDEO, "pending_egl_surface not ready");
-
-pbuffer:
-    surface = data->pbuffer_surface;
-    if (surface == EGL_NO_SURFACE) {
-        SDL_UnlockMutex(data->egl_lock);
-        return SDL_SetError("pbufferSurface not initialized");
-    }
-    if (data->current_surface != EGL_NO_SURFACE) {
-        retval = SDL_EGL_MakeCurrent(_this, data->current_surface, context);
+    endfunc:
         SDL_UnlockMutex(data->egl_lock);
         return retval;
     }
-    if (!(retval = SDL_EGL_MakeCurrent(_this, surface, context))) {
-        data->current_surface = surface;
-    }
-    SDL_UnlockMutex(data->egl_lock);
-    return retval;
 }
 
 int OHOS_GL_DeactivatePendingSurface(_THIS, SDL_Window *window)
