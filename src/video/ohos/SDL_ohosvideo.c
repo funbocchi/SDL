@@ -399,12 +399,12 @@ static SDL_VideoDevice *OHOS_CreateDevice(void)
     device->GL_UnloadLibrary = OHOS_GL_UnloadLibrary;
     device->GL_CreateContext = OHOS_GL_CreateContext;
     device->GL_MakeCurrent = OHOS_GL_MakeCurrent;
-    device->GL_GetDrawableSize;
+    device->GL_GetDrawableSize = OHOS_GL_GetDrawableSize;
     device->GL_SetSwapInterval = OHOS_GL_SetSwapInterval;
     device->GL_GetSwapInterval = OHOS_GL_GetSwapInterval;
     device->GL_SwapWindow = OHOS_GL_SwapWindow;
     device->GL_DeleteContext = OHOS_GL_DeleteContext;
-    device->GL_DefaultProfileConfig;
+    device->GL_DefaultProfileConfig = OHOS_GL_DefaultProfileConfig;
 #endif
 
     /* Vulkan*/
