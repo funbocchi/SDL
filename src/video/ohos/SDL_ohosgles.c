@@ -31,7 +31,6 @@ freely, subject to the following restrictions:
 #include "SDL_ohosvideo.h"
 #include "SDL_ohoswindow.h"
 
-
 /* Tools */
 
 #define OHOS_GL_PBUFFER_WIDTH  1280
@@ -121,6 +120,9 @@ int OHOS_GL_ActivatePendingSurface(_THIS, SDL_Window *window)
         SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO,
                      "[OHOS-GL] activate: eglMakeCurrent ok surface=%p",
                      (void *)data->pending_surface);
+    } else {
+        SDL_UnlockMutex(data->egl_lock);
+        return 0;
     }
 
     SDL_EGL_DestroySurface(_this, data->current_surface);
@@ -309,6 +311,7 @@ int OHOS_GL_MakeCurrent(_THIS, SDL_Window *window, SDL_GLContext context)
                      (void *)context, retval);
         return retval;
     } else {
+        EGLSurface surface;
         data = (SDL_WindowData *)window->driverdata;
         if (!data) {
             SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO,
@@ -324,13 +327,25 @@ int OHOS_GL_MakeCurrent(_THIS, SDL_Window *window, SDL_GLContext context)
                          (void *)context, (void *)data->current_context);
             return OHOS_GL_MakeCurrent(_this, EGL_NO_SURFACE, EGL_NO_CONTEXT);
         }
-        retval = SDL_EGL_MakeCurrent(_this, data->pbuffer_surface, data->current_context);
+        if (data->pending_surface != EGL_NO_SURFACE) {
+            if (data->current_surface != EGL_NO_SURFACE) {
+                SDL_EGL_DestroySurface(_this, data->current_surface);
+            }
+            data->current_surface = data->pending_surface;
+            data->pending_surface = EGL_NO_SURFACE;
+            surface = data->current_surface;
+        } else if (data->current_surface != EGL_NO_SURFACE) {
+            surface = data->current_surface;
+        } else {
+            surface = data->pbuffer_surface;
+        }
+        retval = SDL_EGL_MakeCurrent(_this, surface, context);
         SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO,
                      "[OHOS-GL] make current: bind pbuffer=%p ctx=%p result=%d error=%s",
                      (void *)data->pbuffer_surface, (void *)data->current_context,
                      retval, retval ? SDL_GetError() : "none");
         SDL_UnlockMutex(data->egl_lock);
-        return OHOS_GL_ActivatePendingSurface(_this, window);
+        return retval;
     }
 }
 
