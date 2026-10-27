@@ -41,42 +41,21 @@ struct OHOS_WindowEntry;
 
 typedef struct
 {
+    Uint32 ref_count;
+    SDL_atomic_t destroying;
 #ifdef SDL_VIDEO_OPENGL_EGL
-    SDL_mutex *egl_lock;
-
     EGLSurface current_surface;
-
     EGLSurface pending_surface;
     EGLSurface pbuffer_surface;
-
-    SDL_GLContext current_context;
 #endif
-
-    Uint32 id;
     Uint32 window_id;
-    SDL_VideoDevice *video_device;
-
-    Uint64 real_surface_w, real_surface_h;
-
-    int border_top, border_bottom, border_left, border_right;
-
-    OH_ArkUI_SurfaceHolder *holder;
-    OH_ArkUI_SurfaceCallback *surface_callback;
-
     OHNativeWindow *native_window;
 
+    SDL_mutex *create_lock;
     SDL_cond *create_cond;
-
-    SDL_bool window_ready;
-    SDL_bool attach_ready;
-    SDL_bool create_done;
-
-    /**
-     * @brief snapshot
-     */
-    Uint32 create_flags;
-
-    struct OHOS_WindowEntry *registry_entry;
+    SDL_bool attach_complete;
+    SDL_bool create_complete;
+    SDL_bool done;
 } SDL_WindowData;
 
 extern void OHOS_Window_HandleEvents(_THIS, const SDL_Event *event);

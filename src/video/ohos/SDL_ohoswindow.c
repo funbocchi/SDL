@@ -76,6 +76,15 @@ typedef enum
 
 typedef enum
 {
+    OHOS_NATIVE_WINDOW_NONE = 0,
+    OHOS_NATIVE_WINDOW_CREATED,
+    OHOS_NATIVE_WINDOW_SHOWN,
+    OHOS_NATIVE_WINDOW_HIDDEN,
+    OHOS_NATIVE_WINDOW_DESTROYED
+} OHOS_NativeWindowState;
+
+typedef enum
+{
     OHOS_WINDOW_EVENT_SURFACE_CREATED,
     OHOS_WINDOW_EVENT_SURFACE_CHANGED,
     OHOS_WINDOW_EVENT_SURFACE_DESTROYED
@@ -111,84 +120,168 @@ typedef struct
     float brightness;
 } OHOS_WindowRequest;
 
-typedef struct OHOS_WindowEntry
+typedef struct OHOS_WindowRegistryEntry
 {
     Uint32 id;
     SDL_WindowData *data;
-    SDL_mutex *lock;
+    struct OHOS_WindowRegistryEntry *next;
+} OHOS_WindowRegistryEntry;
 
-    struct OHOS_WindowEntry *next;
-} OHOS_WindowEntry;
+static SDL_mutex *g_ohos_window_registry_lock = NULL;
+static OHOS_WindowRegistryEntry *g_ohos_window_registry = NULL;
 
-static SDL_mutex *g_window_registry_lock = NULL;
-static OHOS_WindowEntry *g_window_registry = NULL;
 static napi_threadsafe_function window_request_tsf;
 static ArkUI_NativeNodeAPI_1 *g_node_api;
 
-/* Tools */
-
-static int OHOS_Tool_RegisterWindowData(SDL_WindowData *data, Uint32 id)
+static void OHOS_WindowData_Free(SDL_WindowData *data)
 {
-    OHOS_WindowEntry *entry;
-
     if (!data) {
-        return SDL_InvalidParamError("data");
+        SDL_InvalidParamError("data");
+        SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "%s", SDL_GetError());
+        return;
     }
-    entry = (OHOS_WindowEntry *)SDL_calloc(1, sizeof(OHOS_WindowEntry));
-    if (!entry) {
-        return SDL_OutOfMemory();
+    if (data->create_cond) {
+        SDL_DestroyCond(data->create_cond);
     }
-    entry->lock = SDL_CreateMutex();
-    if (!entry->lock) {
-        SDL_free(entry);
-        return SDL_OutOfMemory();
+    if (data->create_lock) {
+        SDL_DestroyMutex(data->create_lock);
+    }
+    SDL_free(data);
+}
+
+static void OHOS_WindowRegistry_Release(SDL_WindowData *data)
+{
+    SDL_bool should_free = SDL_FALSE;
+
+    SDL_assert(g_ohos_window_registry_lock != NULL);
+    if (!data) {
+        SDL_InvalidParamError("data");
+        return;
+    }
+    SDL_LockMutex(g_ohos_window_registry_lock);
+    if (data->ref_count == 0) {
+        SDL_UnlockMutex(g_ohos_window_registry_lock);
+        return;
+    }
+    data->ref_count--;
+    if (data->ref_count == 0 && SDL_AtomicGet(&data->destroying)) {
+        should_free = SDL_TRUE;
     }
 
-    SDL_LockMutex(entry->lock);
-    entry->id = id;
-    entry->data = data;
-    data->registry_entry = entry;
-    entry->next = g_window_registry;
-    g_window_registry = entry;
-    SDL_UnlockMutex(entry->lock);
+    SDL_UnlockMutex(g_ohos_window_registry_lock);
+    if (should_free) {
+        OHOS_WindowData_Free(data);
+    }
+}
+
+static int OHOS_WindowRegistry_Register(SDL_WindowData *data, Uint32 id)
+{
+    OHOS_WindowRegistryEntry *entry = NULL;
+    OHOS_WindowRegistryEntry *prev = NULL;
+    OHOS_WindowRegistryEntry *new = NULL;
+
+    SDL_assert(g_ohos_window_registry_lock != NULL);
+    if (!data || id == 0) {
+        return SDL_InvalidParamError("data || id");
+    }
+
+    new = (OHOS_WindowRegistryEntry *)SDL_calloc(1, sizeof(OHOS_WindowRegistryEntry));
+    if (!new) {
+        return SDL_OutOfMemory();
+    }
+    new->id = id;
+    new->data = data;
+    SDL_LockMutex(g_ohos_window_registry_lock);
+    if (SDL_AtomicGet(&data->destroying)) {
+        SDL_UnlockMutex(g_ohos_window_registry_lock);
+        SDL_free(new);
+        return SDL_SetError("WindowRegistry: data is being destroyed");
+    }
+    for (entry = g_ohos_window_registry; entry; entry = entry->next) {
+        if (data == entry->data) {
+            SDL_UnlockMutex(g_ohos_window_registry_lock);
+            SDL_free(new);
+            if (id == entry->id) {
+                return 0;
+            } else {
+                return SDL_SetError("WindowRegistry: Duplicate registration");
+            }
+        } else if (id == entry->id) {
+            return SDL_SetError("WindowRegistry: Duplicate registration");
+        }
+        if (data == entry->data || id == entry->id) {
+        }
+        prev = entry;
+    }
+    SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO,
+                 "WindowRegistry: The detection is complete, and no duplicate data was found.");
+    data->ref_count = 1;
+    SDL_AtomicSet(&data->destroying, SDL_FALSE);
+    if (prev) {
+        prev->next = new;
+    } else {
+        g_ohos_window_registry = new;
+    }
+    SDL_UnlockMutex(g_ohos_window_registry_lock);
     return 0;
 }
 
-static SDL_WindowData *OHOS_Tool_QueueWindowData(Uint32 id)
+static void OHOS_WindowRegistry_Unregister(Uint32 id)
 {
-    OHOS_WindowEntry *entry;
+    OHOS_WindowRegistryEntry *entry = NULL;
+    OHOS_WindowRegistryEntry *prev = NULL;
 
-    for (entry = g_window_registry; entry; entry = entry->next) {
+    SDL_assert(g_ohos_window_registry_lock);
+    if (id == 0) {
+        return;
+    }
+    SDL_LockMutex(g_ohos_window_registry_lock);
+    for (entry = g_ohos_window_registry; entry; entry = entry->next) {
         if (entry->id == id) {
+            break;
+        }
+        prev = entry;
+    }
+    if (!entry) {
+        SDL_UnlockMutex(g_ohos_window_registry_lock);
+        SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "WindowRegistry: No corresponding data found.");
+        return;
+    }
+    SDL_AtomicSet(&entry->data->destroying, SDL_TRUE);
+    if (prev) {
+        prev->next = entry->next;
+    } else {
+        g_ohos_window_registry = entry->next;
+    }
+    SDL_UnlockMutex(g_ohos_window_registry_lock);
+    SDL_free(entry);
+    OHOS_WindowRegistry_Release(data);
+}
+
+static SDL_WindowData *OHOS_WindowRegistry_Acquire(Uint32 id)
+{
+    if (id == 0) {
+        SDL_InvalidParamError("id");
+        return NULL;
+    }
+    SDL_LockMutex(g_ohos_window_registry_lock);
+    for (OHOS_WindowRegistryEntry *entry = g_ohos_window_registry; entry; entry = entry->next) {
+        if (!entry) {
+            break;
+        }
+        if (entry->id == id) {
+            entry->data->ref_count++;
+            SDL_UnlockMutex(g_ohos_window_registry_lock);
             return entry->data;
         }
     }
-    SDL_LogError(SDL_LOG_CATEGORY_VIDEO, "QueueWindowData: failed to locate WindowData");
+    SDL_UnlockMutex(g_ohos_window_registry_lock);
+    SDL_SetError("No data matched.");
+    SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "WindowRegistry: %s", SDL_GetError());
     return NULL;
 }
 
-static void OHOS_Tool_UnregisterWindowData(SDL_WindowData *data)
-{
-    {
-        SDL_LockMutex(data->registry_entry->lock);
-
-        if (g_window_registry == data->registry_entry) {
-            g_window_registry = data->registry_entry->next;
-        } else {
-            OHOS_WindowEntry *prev;
-            for (prev = g_window_registry; prev; prev = prev->next) {
-                if (prev->next == data->registry_entry) {
-                    prev->next = data->registry_entry->next;
-                    break;
-                }
-            }
-        }
-        SDL_UnlockMutex(data->registry_entry->lock);
-        SDL_DestroyMutex(data->registry_entry->lock);
-        SDL_free(data->registry_entry);
-        data->registry_entry = NULL;
-    }
-}
+/* Registery Tools end */
 
 int OHOS_Tool_LockWindowData(SDL_WindowData *data)
 {
@@ -401,22 +494,42 @@ static void OHOS_Napi_EnsureNodeAPI(void)
 
 static void OHOS_Napi_TryCompleteCreate(SDL_WindowData *data)
 {
+    if (!data) {
+        SDL_InvalidParamError("data");
+        SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "%s", SDL_GetError());
+        return;
+    }
+
+    SDL_LockMutex(data->comm_lock);
     if (!data->create_done && data->window_ready && data->attach_ready) {
         data->create_done = SDL_TRUE;
         SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "TryCompleteCreate: signaled");
         SDL_CondSignal(data->create_cond);
     }
+    SDL_UnlockMutex(data->comm_lock);
 }
 
 static void OHOS_Napi_MarkAttachReady(SDL_WindowData *data)
 {
+    if (!data || data->destroying) {
+        return;
+    }
+    SDL_LockMutex(data->comm_lock);
     data->attach_ready = SDL_TRUE;
+    SDL_UnlockMutex(data->comm_lock);
     OHOS_Napi_TryCompleteCreate(data);
 }
 
 static void OHOS_Napi_MarkWindowReady(SDL_WindowData *data)
 {
+    if (!data) {
+        SDL_InvalidParamError("data");
+        SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "%s", SDL_GetError());
+        return;
+    }
+    SDL_LockMutex(data->comm_lock);
     data->window_ready = SDL_TRUE;
+    SDL_UnlockMutex(data->comm_lock);
 
     OHOS_Napi_TryCompleteCreate(data);
 }
@@ -447,19 +560,17 @@ napi_value OHOS_Napi_NotifyWindowReady(napi_env env, napi_callback_info info)
         return NULL;
     }
 
-    SDL_LockMutex(g_window_registry_lock);
-    data = OHOS_Tool_QueueWindowData(id);
+    data = OHOS_WindowRegistry_Acquire(id);
     if (!data) {
-        SDL_UnlockMutex(g_window_registry_lock);
-        Napi_ThrowError(env, napi_invalid_arg, "notifyWindowReady: SDL window not found");
+        Napi_ThrowError(env, napi_invalid_arg, "notifyWindowReady: SDL window data not found");
         return NULL;
     }
-    SDL_LockMutex(data->registry_entry->lock);
-    SDL_UnlockMutex(g_window_registry_lock);
+    SDL_LockMutex(data->comm_lock);
     data->window_id = window_id;
+    SDL_UnlockMutex(data->comm_lock);
     SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "notifyWindowReady: window %u ohos %u", id, window_id);
     OHOS_Napi_MarkWindowReady(data);
-    SDL_UnlockMutex(data->registry_entry->lock);
+    OHOS_WindowRegistry_Release(data);
 
     return Napi_CreateUndefined(env);
 }
@@ -572,26 +683,21 @@ napi_value OHOS_Napi_AttachWindowSurface(napi_env env, napi_callback_info info)
     OH_ArkUI_SurfaceHolder *holder = NULL;
     SDL_WindowData *data = NULL;
     OH_ArkUI_SurfaceCallback *callback = NULL;
-    SDL_LogInfo(SDL_LOG_CATEGORY_VIDEO, "绑定回调");
 
     status = napi_get_cb_info(env, info, &argc, args, NULL, NULL);
     if (status != napi_ok) {
         Napi_ThrowError(env, status, "attachWindowSurface: get_cb_info failed");
         return NULL;
     }
-
     if (argc < 2 || args[0] == NULL || args[1] == NULL) {
         Napi_ThrowError(env, napi_invalid_arg, "attachWindowSurface: node or windowId is missing");
         return NULL;
     }
-
     OHOS_Napi_EnsureNodeAPI();
-
     if (OH_ArkUI_GetNodeHandleFromNapiValue(env, args[0], &node) != ARKUI_ERROR_CODE_NO_ERROR || node == NULL) {
         Napi_ThrowError(env, napi_generic_failure, "attachWindowSurface: invalid FrameNode");
         return NULL;
     }
-
     status = napi_get_value_uint32(env, args[1], &id);
     if (status != napi_ok) {
         Napi_ThrowError(env, status, "attachWindowSurface: windowId is not a number");
@@ -606,6 +712,15 @@ napi_value OHOS_Napi_AttachWindowSurface(napi_env env, napi_callback_info info)
         Napi_ThrowError(env, napi_invalid_arg, "attachWindowSurface: failed to create surfaceHolderCallback");
         return NULL;
     }
+    SDL_LockMutex(g_registry_lock);
+    data = OHOS_WindowRegistry_Acquire(id);
+    SDL_UnlockMutex(g_registry_lock);
+    if (!data) {
+        OH_ArkUI_SurfaceCallback_Dispose(callback);
+        OH_ArkUI_SurfaceHolder_Dispose(holder);
+        Napi_ThrowError(env, napi_invalid_arg, "attachWindowSurface: failed to locate SDL window");
+        return NULL;
+    }
     OH_ArkUI_SurfaceHolder_SetUserData(holder, (void *)(intptr_t)id);
     OH_ArkUI_SurfaceCallback_SetSurfaceCreatedEvent(callback, OnSurfaceCreatedCallback);
     OH_ArkUI_SurfaceCallback_SetSurfaceChangedEvent(callback, OnSurfaceChangedCallback);
@@ -613,23 +728,13 @@ napi_value OHOS_Napi_AttachWindowSurface(napi_env env, napi_callback_info info)
     OH_ArkUI_SurfaceCallback_SetSurfaceShowEvent(callback, OnSurfaceShowCallback);
     OH_ArkUI_SurfaceCallback_SetSurfaceHideEvent(callback, OnSurfaceHideCallback);
     OH_ArkUI_SurfaceHolder_AddSurfaceCallback(holder, callback);
-
-    SDL_LockMutex(g_window_registry_lock);
-    data = OHOS_Tool_QueueWindowData(id);
-    if (!data) {
-        SDL_UnlockMutex(g_window_registry_lock);
-        OH_ArkUI_SurfaceCallback_Dispose(callback);
-        OH_ArkUI_SurfaceHolder_Dispose(holder);
-        Napi_ThrowError(env, napi_invalid_arg, "attachWindowSurface: failed to locate SDL window");
-        return NULL;
-    }
-    SDL_LockMutex(data->registry_entry->lock);
-    SDL_UnlockMutex(g_window_registry_lock);
+    SDL_LockMutex(data->comm_lock);
     data->holder = holder;
     data->surface_callback = callback;
+    SDL_UnlockMutex(data->comm_lock);
+
     SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "attachWindowSurface: holder created for window %u", id);
     OHOS_Napi_MarkAttachReady(data);
-    SDL_UnlockMutex(data->registry_entry->lock);
 
     return Napi_CreateUndefined(env);
 }
@@ -697,16 +802,12 @@ int OHOS_CreateWindow(_THIS, SDL_Window *window)
 
     SDL_assert(_this != NULL && window != NULL);
 
-    SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO,
-                 "OHOS_CreateWindow: begin id=%u flags=0x%x %dx%d",
-                 window->id, window->flags, window->w, window->h);
-
     data = (SDL_WindowData *)SDL_calloc(1, sizeof(SDL_WindowData));
     req = (OHOS_WindowRequest *)SDL_calloc(1, sizeof(OHOS_WindowRequest));
-    if (!g_window_registry_lock) {
-        g_window_registry_lock = SDL_CreateMutex();
+    if (!g_registry_lock) {
+        g_registry_lock = SDL_CreateMutex();
     }
-    if (!data || !req || !g_window_registry_lock) {
+    if (!data || !req || !g_registry_lock) {
         retval = SDL_OutOfMemory();
         goto errfunc;
     }
@@ -716,31 +817,33 @@ int OHOS_CreateWindow(_THIS, SDL_Window *window)
         retval = SDL_OutOfMemory();
         goto errfunc;
     }
-    data->current_context = EGL_NO_CONTEXT;
     data->current_surface = EGL_NO_SURFACE;
     data->pending_surface = EGL_NO_SURFACE;
     data->pbuffer_surface = EGL_NO_SURFACE;
 #endif
+    data->comm_lock = SDL_CreateMutex();
     data->create_cond = SDL_CreateCond();
-    if (!data->create_cond) {
+    if (!data->create_cond || !data->comm_lock) {
         retval = SDL_OutOfMemory();
         goto errfunc;
     }
 
-    SDL_LockMutex(g_window_registry_lock);
-    retval = OHOS_Tool_RegisterWindowData(data, window->id);
+    SDL_LockMutex(data->comm_lock);
+    data->id = window->id;
+    data->video_device = _this;
+    data->ref_count = 1;
+    data->destroying = SDL_FALSE;
+    data->create_flags = window->flags;
+    window->driverdata = (void *)data;
+    SDL_UnlockMutex(data->comm_lock);
+    SDL_LockMutex(g_registry_lock);
+    retval = OHOS_WindowRegistry_Register(data, window->id);
     if (retval) {
         SDL_UnlockMutex(g_window_registry_lock);
         SDL_LogError(SDL_LOG_CATEGORY_VIDEO, "OHOS_Create: %s", SDL_GetError());
         goto errfunc;
     }
-    SDL_LockMutex(data->registry_entry->lock);
-    SDL_UnlockMutex(g_window_registry_lock);
-    data->id = window->id;
-    data->video_device = _this;
-    data->create_flags = window->flags;
-    window->driverdata = (void *)data;
-    SDL_UnlockMutex(data->registry_entry->lock);
+    SDL_UnlockMutex(g_registry_lock);
 
     retval = OHOS_Tool_ParseWindowRequest(window, OHOS_WINDOW_CMD_CREATE, req);
     if (retval) {
@@ -753,34 +856,26 @@ int OHOS_CreateWindow(_THIS, SDL_Window *window)
         goto errfunc;
     }
     start_time = SDL_GetTicks();
-    SDL_LockMutex(data->registry_entry->lock);
+    SDL_LockMutex(data->comm_lock);
     while (!data->create_done) {
         Uint32 elapsed = SDL_GetTicks() - start_time;
         if (elapsed >= 5000) {
             break;
         }
-        if (SDL_CondWaitTimeout(data->create_cond, data->registry_entry->lock, 5000 - elapsed) == SDL_MUTEX_TIMEDOUT) {
+        if (SDL_CondWaitTimeout(data->create_cond, data->comm_lock, 5000 - elapsed) == SDL_MUTEX_TIMEDOUT) {
             break;
         }
     }
     if (!data->create_done) {
-        SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO,
-                     "OHOS_CreateWindow: timeout id=%u create_done=%d",
-                     window->id, data->create_done);
+        SDL_UnlockMutex(data->comm_lock);
         retval = SDL_SetError("OHOS Window creation timed out");
         goto errfunc;
     }
-    SDL_UnlockMutex(data->registry_entry->lock);
-    SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO,
-                 "OHOS_CreateWindow: success id=%u create_done=%d window->driverdata=%p data=%p",
-                 window->id, data->create_done, window->driverdata, (void *)data);
-    if (req->title) {
-        SDL_free((void *)req->title);
-    }
-    SDL_free(req);
+    SDL_UnlockMutex(data->comm_lock);
+    OHOS_Tool_DestroyWindowRequest(req);
     return retval;
 errfunc:
-    OHOS_Tool_DestroyWindowData(data);
+    OHOS_WindowData_Destroy(data);
     OHOS_Tool_DestroyWindowRequest(req);
     return retval;
 }
