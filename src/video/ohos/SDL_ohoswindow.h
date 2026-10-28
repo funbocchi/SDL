@@ -24,43 +24,24 @@
 #ifndef SDL_OHOSWINDOW_H
 #define SDL_OHOSWINDOW_H
 
-#include <native_window/external_window.h>
+#include <ace/xcomponent/native_interface_xcomponent.h>
+#include <napi/native_api.h>
 
+#include "../SDL_sysvideo.h"
+#include "SDL_egl.h"
 #include "SDL_events.h"
-#include "SDL_mutex.h"
-#ifdef SDL_VIDEO_OPENGL_EGL
-#include "../SDL_egl_c.h"
-#endif
 
-#include "../../core/ohos/SDL_ohos.h"
-
-/* Forward declaration to avoid pulling the full ArkUI header into every includer */
-typedef struct OH_ArkUI_SurfaceHolder OH_ArkUI_SurfaceHolder;
-typedef struct OH_ArkUI_SurfaceCallback OH_ArkUI_SurfaceCallback;
-struct OHOS_WindowEntry;
-
+/* Placeholder until the OHOS window backend is rebuilt. */
 typedef struct
 {
-    Uint32 ref_count;
-    SDL_atomic_t destroying;
-#ifdef SDL_VIDEO_OPENGL_EGL
-    EGLSurface current_surface;
-    EGLSurface pending_surface;
-    EGLSurface pbuffer_surface;
-#endif
-    Uint32 window_id;
-    OHNativeWindow *native_window;
-
-    SDL_mutex *create_lock;
-    SDL_cond *create_cond;
-    SDL_bool attach_complete;
-    SDL_bool create_complete;
-    SDL_bool done;
+    OHNativeWindow *surface;
+    SDL_bool surface_ready;
+    SDL_atomic_t visible;
 } SDL_WindowData;
 
-extern void OHOS_Window_HandleEvents(_THIS, const SDL_Event *event);
+extern napi_value OHOS_Napi_AttachNode(napi_env env, napi_callback_info info);
 
-/* Hooks for SDL2 */
+/* Window hooks, in SDL_VideoDevice declaration order. */
 extern int OHOS_CreateWindow(_THIS, SDL_Window *window);
 extern int OHOS_CreateWindowFrom(_THIS, SDL_Window *window, const void *data);
 extern void OHOS_SetWindowTitle(_THIS, SDL_Window *window);
@@ -98,26 +79,8 @@ extern void OHOS_DestroyWindowFramebuffer(_THIS, SDL_Window *window);
 extern void OHOS_OnWindowEnter(_THIS, SDL_Window *window);
 extern int OHOS_FlashWindow(_THIS, SDL_Window *window, SDL_FlashOperation operation);
 
-/* Napi */
-extern napi_value OHOS_ThreadSafe_RegisterCallWindowRequest(napi_env env, napi_callback_info info);
-extern napi_value OHOS_Napi_AttachWindowSurface(napi_env env, napi_callback_info info);
-extern napi_value OHOS_Napi_DetachWindowSurface(napi_env env, napi_callback_info info);
-extern napi_value OHOS_Napi_NotifyWindowReady(napi_env env, napi_callback_info info);
-
-/* * * */
-/**
- * Others
- */
-
-extern SDL_bool OHOS_Tool_HasFlag(Uint32 flags, Uint32 mask);
-
-extern int OHOS_Tool_LockWindowData(SDL_WindowData *data);
-
-extern int OHOS_Tool_UnlockWidnowData(SDL_WindowData *data);
-
-extern int OHOS_Window_WaitSurfaceReady(SDL_WindowData *data, Sint32 timeout_ms);
-
-extern void OHOS_Window_PumpSurfaceState(_THIS);
+/* Backend-internal hook used by OHOS_PumpEvents. */
+extern void OHOS_Window_HandleEvents(_THIS, const SDL_Event *event);
 
 #endif /* SDL_OHOSWINDOW_H */
 

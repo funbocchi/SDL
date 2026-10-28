@@ -27,42 +27,61 @@
 #if defined(SDL_VIDEO_DRIVER_OHOS) && defined(SDL_VIDEO_OPENGL_EGL)
 
 #include "../SDL_sysvideo.h"
+#include "../SDL_egl_c.h"
+#include "SDL_atomic.h"
+#include "SDL_events.h"
 
-/* Hooks */
+typedef struct OHOS_GLWindowSurface
+{
+    Uint32 window_id;
+
+    int ref_count;
+    SDL_bool destroying;
+
+    SDL_atomic_t native_window_valid;
+    SDL_atomic_t surface_generation;
+    SDL_atomic_t surface_visible;
+
+    EGLSurface offscreen_surface;
+    EGLSurface window_surface;
+    Uint32 window_surface_generation;
+
+    struct OHOS_GLWindowSurface *next;
+} OHOS_GLWindowSurface;
+
+/* OpenGL hooks, in SDL_VideoDevice declaration order. */
 
 extern int OHOS_GL_LoadLibrary(_THIS, const char *path);
-
 extern void *OHOS_GL_GetProcAddress(_THIS, const char *proc);
-
 extern void OHOS_GL_UnloadLibrary(_THIS);
-
 extern SDL_GLContext OHOS_GL_CreateContext(_THIS, SDL_Window *window);
-
 extern int OHOS_GL_MakeCurrent(_THIS, SDL_Window *window, SDL_GLContext context);
-
 extern void OHOS_GL_GetDrawableSize(_THIS, SDL_Window *window, int *w, int *h);
-
 extern int OHOS_GL_SetSwapInterval(_THIS, int interval);
-
 extern int OHOS_GL_GetSwapInterval(_THIS);
-
 extern int OHOS_GL_SwapWindow(_THIS, SDL_Window *window);
-
 extern void OHOS_GL_DeleteContext(_THIS, SDL_GLContext context);
-
 extern void OHOS_GL_DefaultProfileConfig(_THIS, int *mask, int *major, int *minor);
 
-/* Private */
+typedef enum OHOS_GLSurfaceEventCode
+{
+    OHOS_GL_EVENT_SURFACE_CREATED = 0,
+    OHOS_GL_EVENT_SURFACE_DESTROYED,
+    OHOS_GL_EVENT_SURFACE_SHOWN,
+    OHOS_GL_EVENT_SURFACE_HIDDEN
+} OHOS_GLSurfaceEventCode;
 
-/**
-* @brief Complete the creation of the surface
-*/
-extern int OHOS_GL_PreparePendingSurface(_THIS, SDL_Window *window);
+extern void OHOS_GL_HandleEvents(_THIS, const SDL_Event *event);
 
-extern int OHOS_GL_ActivatePendingSurface(_THIS, SDL_Window *window);
+/* Surface registry */
 
-extern int OHOS_GL_DeactivatePendingSurface(_THIS, SDL_Window *window);
+extern int OHOS_GLRegistry_Register(Uint32 id);
+extern void OHOS_GLRegistry_Unregister(Uint32 id);
+extern OHOS_GLWindowSurface *OHOS_GLRegistry_Acquire(Uint32 id);
+extern void OHOS_GLRegistry_Release(OHOS_GLWindowSurface *surface);
 
-#endif
+#endif /* SDL_VIDEO_DRIVER_OHOS && SDL_VIDEO_OPENGL_EGL */
 
-#endif
+#endif /* SDL_OHOSGLES_H */
+
+/* vi: set ts=4 sw=4 expandtab: */
