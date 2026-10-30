@@ -26,8 +26,8 @@
 
 #if defined(SDL_VIDEO_DRIVER_OHOS) && defined(SDL_VIDEO_OPENGL_EGL)
 
-#include "../SDL_sysvideo.h"
 #include "../SDL_egl_c.h"
+#include "../SDL_sysvideo.h"
 #include "SDL_atomic.h"
 #include "SDL_events.h"
 
@@ -38,9 +38,11 @@ typedef struct OHOS_GLWindowSurface
     int ref_count;
     SDL_bool destroying;
 
-    SDL_atomic_t native_window_valid;
     SDL_atomic_t surface_generation;
     SDL_atomic_t surface_visible;
+    SDL_atomic_t window_surface_ready;
+    SDL_atomic_t drawable_width;
+    SDL_atomic_t drawable_height;
 
     EGLSurface offscreen_surface;
     EGLSurface window_surface;
@@ -67,8 +69,9 @@ typedef enum OHOS_GLSurfaceEventCode
 {
     OHOS_GL_EVENT_SURFACE_CREATED = 0,
     OHOS_GL_EVENT_SURFACE_DESTROYED,
+    OHOS_GL_EVENT_SURFACE_CHANGED,
     OHOS_GL_EVENT_SURFACE_SHOWN,
-    OHOS_GL_EVENT_SURFACE_HIDDEN
+    OHOS_GL_EVENT_SURFACE_HIDDEEN
 } OHOS_GLSurfaceEventCode;
 
 extern void OHOS_GL_HandleEvents(_THIS, const SDL_Event *event);

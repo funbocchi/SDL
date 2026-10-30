@@ -27,6 +27,9 @@
 
 #include "../SDL_egl_c.h"
 
+#define OHOS_GL_OFFSCREEN_WIDTH  1280
+#define OHOS_GL_OFFSCREEN_HEIGHT 720
+
 /* Surface registry */
 
 static SDL_mutex *g_ohos_gl_registry_lock = NULL;
@@ -67,9 +70,11 @@ int OHOS_GLRegistry_Register(Uint32 id)
     entry->offscreen_surface = EGL_NO_SURFACE;
     entry->window_surface = EGL_NO_SURFACE;
     entry->window_surface_generation = 0;
-    SDL_AtomicSet(&entry->native_window_valid, SDL_FALSE);
     SDL_AtomicSet(&entry->surface_generation, 0);
     SDL_AtomicSet(&entry->surface_visible, SDL_FALSE);
+    SDL_AtomicSet(&entry->window_surface_ready, SDL_FALSE);
+    SDL_AtomicSet(&entry->drawable_width, 0);
+    SDL_AtomicSet(&entry->drawable_height, 0);
     entry->next = g_ohos_gl_window_surfaces;
     g_ohos_gl_window_surfaces = entry;
 
@@ -200,8 +205,8 @@ static void OHOS_GLRegistry_FreeEntry(OHOS_GLWindowSurface *surface)
     surface->offscreen_surface = EGL_NO_SURFACE;
     surface->window_surface_generation = 0;
 
-    SDL_AtomicSet(&surface->native_window_valid, SDL_FALSE);
     SDL_AtomicSet(&surface->surface_visible, SDL_FALSE);
+    SDL_AtomicSet(&surface->window_surface_ready, SDL_FALSE);
     SDL_AtomicSet(&surface->surface_generation, 0);
 
     SDL_free(surface);
@@ -225,11 +230,12 @@ static void OHOS_GL_HandleSurfaceDestroyed(_THIS, const SDL_Event *event)
         return;
     }
 
-    if (generation != (Uint32)SDL_AtomicGet(&surface->surface_generation) ||
-        SDL_AtomicGet(&surface->native_window_valid)) {
+    if (generation != (Uint32)SDL_AtomicGet(&surface->surface_generation)) {
         OHOS_GLRegistry_Release(surface);
         return;
     }
+    
+    SDL_AtomicSet(&surface->window_surface_ready, SDL_FALSE);
 
     window = SDL_GetWindowFromID(event->user.windowID);
     if (window && SDL_GL_GetCurrentWindow() == window) {
@@ -258,8 +264,6 @@ static void OHOS_GL_HandleSurfaceDestroyed(_THIS, const SDL_Event *event)
 static void OHOS_GL_HandleSurfaceCreated(_THIS, const SDL_Event *event)
 {
     OHOS_GLWindowSurface *surface;
-    SDL_Window *window;
-    SDL_GLContext context;
     EGLSurface new_surface;
     NativeWindowType native_window;
     Uint32 generation;
@@ -276,8 +280,7 @@ static void OHOS_GL_HandleSurfaceCreated(_THIS, const SDL_Event *event)
         return;
     }
 
-    if (!SDL_AtomicGet(&surface->native_window_valid) ||
-        generation != (Uint32)SDL_AtomicGet(&surface->surface_generation)) {
+    if (generation != (Uint32)SDL_AtomicGet(&surface->surface_generation)) {
         OHOS_GLRegistry_Release(surface);
         return;
     }
@@ -288,21 +291,10 @@ static void OHOS_GL_HandleSurfaceCreated(_THIS, const SDL_Event *event)
         return;
     }
 
-    if (!SDL_AtomicGet(&surface->native_window_valid) ||
-        generation != (Uint32)SDL_AtomicGet(&surface->surface_generation)) {
+    if (generation != (Uint32)SDL_AtomicGet(&surface->surface_generation)) {
         SDL_EGL_DestroySurface(_this, new_surface);
         OHOS_GLRegistry_Release(surface);
         return;
-    }
-
-    window = SDL_GetWindowFromID(event->user.windowID);
-    if (window && SDL_GL_GetCurrentWindow() == window) {
-        context = SDL_GL_GetCurrentContext();
-        if (context && SDL_EGL_MakeCurrent(_this, new_surface, context) < 0) {
-            SDL_EGL_DestroySurface(_this, new_surface);
-            OHOS_GLRegistry_Release(surface);
-            return;
-        }
     }
 
     if (surface->window_surface != EGL_NO_SURFACE &&
@@ -312,6 +304,46 @@ static void OHOS_GL_HandleSurfaceCreated(_THIS, const SDL_Event *event)
 
     surface->window_surface = new_surface;
     surface->window_surface_generation = generation;
+    SDL_AtomicSet(&surface->window_surface_ready, SDL_FALSE);
+    SDL_AtomicSet(&surface->surface_visible, SDL_TRUE);
+
+    OHOS_GLRegistry_Release(surface);
+}
+
+static void OHOS_GL_HandleSurfaceChanged(_THIS, const SDL_Event *event)
+{
+    OHOS_GLWindowSurface *surface;
+    SDL_Window *window;
+    SDL_GLContext context;
+    Uint32 generation;
+
+    if (!event) {
+        return;
+    }
+
+    generation = (Uint32)(uintptr_t)event->user.data1;
+
+    surface = OHOS_GLRegistry_Acquire(event->user.windowID);
+    if (!surface) {
+        return;
+    }
+
+    if (generation != (Uint32)SDL_AtomicGet(&surface->surface_generation) ||
+        !SDL_AtomicGet(&surface->window_surface_ready) ||
+        surface->window_surface == EGL_NO_SURFACE ||
+        surface->window_surface_generation != generation) {
+        OHOS_GLRegistry_Release(surface);
+        return;
+    }
+
+    window = SDL_GetWindowFromID(event->user.windowID);
+    if (window && SDL_GL_GetCurrentWindow() == window) {
+        context = SDL_GL_GetCurrentContext();
+        if (context && SDL_EGL_MakeCurrent(_this, surface->window_surface, context) < 0) {
+            OHOS_GLRegistry_Release(surface);
+            return;
+        }
+    }
 
     OHOS_GLRegistry_Release(surface);
 }
@@ -329,6 +361,9 @@ void OHOS_GL_HandleEvents(_THIS, const SDL_Event *event)
     case OHOS_GL_EVENT_SURFACE_DESTROYED:
         OHOS_GL_HandleSurfaceDestroyed(_this, event);
         break;
+    case OHOS_GL_EVENT_SURFACE_CHANGED:
+        OHOS_GL_HandleSurfaceChanged(_this, event);
+        break;
     default:
         break;
     }
@@ -338,7 +373,7 @@ void OHOS_GL_HandleEvents(_THIS, const SDL_Event *event)
 
 int OHOS_GL_LoadLibrary(_THIS, const char *path)
 {
-    int retval = SDL_EGL_LoadLibrary(_this, path, (NativeDisplayType)EGL_DEFAULT_DISPLAY, 0);
+    int retval = SDL_EGL_LoadLibrary(_this, path, (NativeDisplayType)EGL_DEFAULT_DISPLAY, EGL_PLATFORM_OHOS_KHR);
 
     if (retval != 0) {
         return retval;
@@ -363,7 +398,7 @@ int OHOS_GL_LoadLibrary(_THIS, const char *path)
 
 void *OHOS_GL_GetProcAddress(_THIS, const char *proc)
 {
-    return NULL;
+    return SDL_EGL_GetProcAddress(_this, proc);
 }
 
 void OHOS_GL_UnloadLibrary(_THIS)
@@ -378,39 +413,151 @@ void OHOS_GL_UnloadLibrary(_THIS)
 
 SDL_GLContext OHOS_GL_CreateContext(_THIS, SDL_Window *window)
 {
-    return NULL;
+    OHOS_GLWindowSurface *entry = NULL;
+    EGLSurface surface = EGL_NO_SURFACE;
+    SDL_GLContext context = NULL;
+
+    entry = OHOS_GLRegistry_Acquire(window->id);
+    if (!entry) {
+        SDL_SetError("OHOS GL window surface not registered");
+        return NULL;
+    }
+    if (entry->window_surface != EGL_NO_SURFACE &&
+        entry->window_surface_generation == (Uint32)SDL_AtomicGet(&entry->surface_generation) &&
+        SDL_AtomicGet(&entry->window_surface_ready)) {
+        surface = entry->window_surface;
+    } else {
+        if (entry->offscreen_surface == EGL_NO_SURFACE) {
+            surface = SDL_EGL_CreateOffscreenSurface(_this, OHOS_GL_OFFSCREEN_WIDTH, OHOS_GL_OFFSCREEN_HEIGHT);
+            if (surface == EGL_NO_SURFACE) {
+                OHOS_GLRegistry_Release(entry);
+                return EGL_NO_CONTEXT;
+            }
+            entry->offscreen_surface = surface;
+        }
+        surface = entry->offscreen_surface;
+    }
+    context = SDL_EGL_CreateContext(_this, surface);
+    OHOS_GLRegistry_Release(entry);
+    return context;
 }
 
 int OHOS_GL_MakeCurrent(_THIS, SDL_Window *window, SDL_GLContext context)
 {
-    return 0;
+    EGLSurface surface = EGL_NO_SURFACE;
+    int retval = 0;
+
+    SDL_assert(_this != NULL);
+    if (!_this->egl_data) {
+        if (SDL_EGL_LoadLibrary(_this, NULL, EGL_DEFAULT_DISPLAY, 0) < 0) {
+            SDL_EGL_UnloadLibrary(_this);
+            return -1;
+        }
+        _this->gl_config.driver_loaded = 1;
+    }
+
+    if (window != NULL) {
+        OHOS_GLWindowSurface *entry = NULL;
+        entry = OHOS_GLRegistry_Acquire(window->id);
+        if (!entry) {
+            return SDL_SetError("OHOS GL entry not found");
+        }
+        if (entry->window_surface != EGL_NO_SURFACE &&
+            SDL_AtomicGet(&entry->window_surface_ready) &&
+            entry->window_surface_generation == (Uint32)SDL_AtomicGet(&entry->surface_generation)) {
+            surface = entry->window_surface;
+        } else {
+            if (entry->offscreen_surface == EGL_NO_SURFACE) {
+                surface = SDL_EGL_CreateOffscreenSurface(_this, OHOS_GL_OFFSCREEN_WIDTH, OHOS_GL_OFFSCREEN_HEIGHT);
+                if (surface == EGL_NO_SURFACE) {
+                    OHOS_GLRegistry_Release(entry);
+                    return -1;
+                }
+                entry->offscreen_surface = surface;
+            } else {
+                surface = entry->offscreen_surface;
+            }
+        }
+        OHOS_GLRegistry_Release(entry);
+    }
+    retval = SDL_EGL_MakeCurrent(_this, surface, context);
+    return retval;
 }
 
 void OHOS_GL_GetDrawableSize(_THIS, SDL_Window *window, int *w, int *h)
 {
+    OHOS_GLWindowSurface *surface;
+    int width = 0;
+    int height = 0;
+
+    if (window) {
+        surface = OHOS_GLRegistry_Acquire(window->id);
+        if (surface) {
+            width = SDL_AtomicGet(&surface->drawable_width);
+            height = SDL_AtomicGet(&surface->drawable_height);
+            OHOS_GLRegistry_Release(surface);
+        }
+    }
+
+    if (width == 0 && window) {
+        width = window->w;
+    }
+    if (height == 0 && window) {
+        height = window->h;
+    }
+
+    if (w) {
+        *w = width;
+    }
+    if (h) {
+        *h = height;
+    }
 }
 
 int OHOS_GL_SetSwapInterval(_THIS, int interval)
 {
-    return 0;
+    return SDL_EGL_SetSwapInterval(_this, interval);
 }
 
 int OHOS_GL_GetSwapInterval(_THIS)
 {
-    return 0;
+    return SDL_EGL_GetSwapInterval(_this);
 }
 
 int OHOS_GL_SwapWindow(_THIS, SDL_Window *window)
 {
-    return 0;
+    OHOS_GLWindowSurface *entry;
+    int retval;
+
+    entry = OHOS_GLRegistry_Acquire(window->id);
+    if (!entry) {
+        return -1;
+    }
+
+    if (entry->window_surface == EGL_NO_SURFACE ||
+        !SDL_AtomicGet(&entry->window_surface_ready) ||
+        SDL_AtomicGet(&entry->surface_generation) != entry->window_surface_generation ||
+        !SDL_AtomicGet(&entry->surface_visible)) {
+        OHOS_GLRegistry_Release(entry);
+        return 0;
+    }
+    retval = SDL_EGL_SwapBuffers(_this, entry->window_surface);
+    OHOS_GLRegistry_Release(entry);
+    return retval;
 }
 
 void OHOS_GL_DeleteContext(_THIS, SDL_GLContext context)
 {
+    if (context) {
+        SDL_EGL_DeleteContext(_this, context);
+    }
 }
 
 void OHOS_GL_DefaultProfileConfig(_THIS, int *mask, int *major, int *minor)
 {
+    *mask = SDL_GL_CONTEXT_PROFILE_ES;
+    *major = 2;
+    *minor = 0;
 }
 
 #endif /* SDL_VIDEO_DRIVER_OHOS && SDL_VIDEO_OPENGL_EGL */

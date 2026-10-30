@@ -2,6 +2,7 @@ import { display, window } from '@kit.ArkUI'
 import { BusinessError } from '@kit.BasicServicesKit'
 import { OHOSWindowRequest, notifyWindowReady } from 'libsdl2.so'
 import { OHOSWindowCommand } from '../common/OHOSWindowTypes'
+import { WindowLifecycleWatcher } from './WindowLifecycleWatcher'
 
 class WindowTaskQueue {
   private chains: Map<number, Promise<void>> = new Map();
@@ -86,25 +87,33 @@ class WindowTaskQueue {
   }
 }
 
-export class SDLWindowManager {
+export class SDL2WindowManager {
   private windowStage?: window.WindowStage;
   private pageName: string = '';
   private windows: Map<number, window.Window> = new Map();
   private mainWindowId: number = -1;
   private queue: WindowTaskQueue = new WindowTaskQueue();
+  private lifecycleWatcher: WindowLifecycleWatcher;
 
-  private static instance: SDLWindowManager | null = null;
-  static getInstance(): SDLWindowManager {
-    if (SDLWindowManager.instance === null) {
-      SDLWindowManager.instance = new SDLWindowManager();
+  private static instance: SDL2WindowManager | null = null;
+  static getInstance(): SDL2WindowManager {
+    if (SDL2WindowManager.instance === null) {
+      SDL2WindowManager.instance = new SDL2WindowManager();
     }
-    return SDLWindowManager.instance;
+    return SDL2WindowManager.instance;
+  }
+
+  private constructor() {
+    this.lifecycleWatcher = new WindowLifecycleWatcher((id: number): void => {
+      this.handlePlatformWindowDestroyed(id);
+    });
   }
 
   public init(windowStage: window.WindowStage): void {
     this.windowStage = windowStage;
   }
   public destroy(): void {
+    this.lifecycleWatcher.dispose();
     this.windowStage = undefined;
     this.windows.clear();
     this.mainWindowId = -1;
@@ -112,6 +121,17 @@ export class SDLWindowManager {
   }
   public setPageName(name: string): void {
     this.pageName = name;
+  }
+
+  private handlePlatformWindowDestroyed(id: number): void {
+    console.warn(`[SDL] platform window destroyed id=${id}`);
+
+    this.windows.delete(id);
+    this.queue.remove(id);
+
+    if (id === this.mainWindowId) {
+      this.mainWindowId = -1;
+    }
   }
   public handleWindowRequest(request: OHOSWindowRequest): void {
     if (this.isCoalescable(request.cmd)) {
@@ -162,6 +182,7 @@ export class SDLWindowManager {
         await this.createWindow(request);
         break;
       case OHOSWindowCommand.OHOS_WINDOW_CMD_DESTROY:
+        await this.destroyWindow(request.id);
         break;
       case OHOSWindowCommand.OHOS_WINDOW_CMD_SET_TITLE:
         await this.setWindowTitle(request.id, request.title);
@@ -230,10 +251,11 @@ export class SDLWindowManager {
       if (this.mainWindowId == -1) {
         win = await this.windowStage.getMainWindow();
         this.windows.set(request.id, win);
-        await win.minimize();
-        await new Promise<void>((resolve: () => void) => setTimeout(resolve, 500));
+        this.lifecycleWatcher.watch(request.id, win);
+        // await win.minimize();
+        await new Promise<void>((resolve: () => void) => setTimeout(resolve, 32));
         await win.loadContentByName(this.pageName, storage);
-        console.warn(`createWindow(${request.id}): content loaded`);
+        // console.warn(`createWindow(${request.id}): content loaded`);
         this.mainWindowId = request.id;
       } else {
         let options: window.SubWindowOptions = {
@@ -242,20 +264,87 @@ export class SDLWindowManager {
         }
         win = await this.windowStage.createSubWindowWithOptions(this.buildSubWindowName(request.id), options);
         this.windows.set(request.id, win);
+        this.lifecycleWatcher.watch(request.id, win);
         await win.loadContentByName(this.pageName, storage);
-        console.warn(`createWindow(${request.id}): content loaded`);
+        // console.warn(`createWindow(${request.id}): content loaded`);
       }
       await this.setWindowTitle(request.id, request.title);
       await this.setWindowBordered(request.id, request.borderless, request.w, request.h, request.allowHighdpi);
       await this.setWindowPos(request.id, request.x, request.y, request.allowHighdpi, request.w, request.h);
       await this.setWindowSize(request.id, request.w, request.h, request.allowHighdpi);
 
-      console.warn(`createWindow(${request.id}): before notifyWindowReady`);
+      // console.warn(`createWindow(${request.id}): before notifyWindowReady`);
       notifyWindowReady(request.id, win.getWindowProperties()
         .id);
-      console.warn(`createWindow(${request.id}): after notifyWindowReady`);
+      // console.warn(`createWindow(${request.id}): after notifyWindowReady`);
     } catch (err) {
       console.error(`createWindow(${request.id}) failed: ${err.message}`);
+    }
+  }
+
+  private async destroyWindow(id: number): Promise<void> {
+    const win = this.windows.get(id);
+    if (!win) {
+      console.warn(`destroyWindow: window ${id} not found, ignored`);
+      return;
+    }
+
+    if (id === this.mainWindowId) {
+      this.lifecycleWatcher.markSdlDestroy(id);
+
+      const childIds: number[] = [];
+      this.windows.forEach((_value: window.Window, key: number): void => {
+        if (key !== id) {
+          childIds.push(key);
+        }
+      });
+
+      for (const childId of childIds) {
+        const child = this.windows.get(childId);
+        this.queue.remove(childId);
+        if (child) {
+          this.lifecycleWatcher.markSdlDestroy(childId);
+          try {
+            await child.destroyWindow();
+            console.warn(`destroyWindow: child window ${childId} destroyed`);
+          } catch (err) {
+            console.error(`destroyWindow: child window ${childId} failed: ${err.message}`);
+          } finally {
+            this.lifecycleWatcher.unwatch(childId);
+            this.lifecycleWatcher.unmarkSdlDestroy(childId);
+          }
+        }
+        this.windows.delete(childId);
+      }
+
+      try {
+        if (this.windowStage) {
+          await this.windowStage.releaseUIContent();
+          console.warn('destroyWindow: main window UI content released');
+        }
+      } catch (err) {
+        console.error(`destroyWindow: releaseUIContent failed: ${err.message}`);
+      }
+
+      this.lifecycleWatcher.unwatch(id);
+      this.lifecycleWatcher.unmarkSdlDestroy(id);
+      this.queue.remove(id);
+      this.windows.delete(id);
+      this.mainWindowId = -1;
+      return;
+    }
+
+    this.queue.remove(id);
+    this.lifecycleWatcher.markSdlDestroy(id);
+    try {
+      await win.destroyWindow();
+      console.warn(`destroyWindow: window ${id} destroyed`);
+    } catch (err) {
+      console.error(`destroyWindow: window ${id} failed: ${err.message}`);
+    } finally {
+      this.lifecycleWatcher.unwatch(id);
+      this.lifecycleWatcher.unmarkSdlDestroy(id);
+      this.windows.delete(id);
     }
   }
   //
@@ -342,12 +431,14 @@ export class SDLWindowManager {
       return;
     }
     try {
+      console.warn(`showWindow(${id}): mainWindowId=${this.mainWindowId}, restore=${id === this.mainWindowId}`);
       if (id === this.mainWindowId) {
         await win.restore();
       } else {
         await win.showWindow();
       }
     } catch (err) {
+      console.error(`showWindow(${id}) failed: ${err.message}`);
     }
   }
   //

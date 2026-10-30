@@ -32,6 +32,9 @@
 #ifdef SDL_VIDEO_DRIVER_RPI
 #include <unistd.h>
 #endif
+#ifdef SDL_VIDEO_DRIVER_OHOS
+#include <native_window/external_window.h>
+#endif
 
 #include "SDL_sysvideo.h"
 #include "SDL_egl_c.h"
@@ -1190,6 +1193,9 @@ EGLSurface *SDL_EGL_CreateSurface(_THIS, NativeWindowType nw)
     EGLint format_wanted;
     EGLint format_got;
 #endif
+#ifdef SDL_VIDEO_DRIVER_OHOS
+    EGLint format_wanted;
+#endif
     /* max 2 key+value pairs, plus terminator. */
     EGLint attribs[5];
     int attr = 0;
@@ -1210,6 +1216,13 @@ EGLSurface *SDL_EGL_CreateSurface(_THIS, NativeWindowType nw)
 
     /* Format based on selected egl config. */
     ANativeWindow_setBuffersGeometry(nw, 0, 0, format_wanted);
+#endif
+#ifdef SDL_VIDEO_DRIVER_OHOS
+    _this->egl_data->eglGetConfigAttrib(_this->egl_data->egl_display,
+                                        _this->egl_data->egl_config,
+                                        EGL_NATIVE_VISUAL_ID,
+                                        &format_wanted);
+    OH_NativeWindow_NativeWindowHandleOpt((OHNativeWindow *)nw, SET_FORMAT, format_wanted);
 #endif
 
     if (_this->gl_config.framebuffer_srgb_capable) {

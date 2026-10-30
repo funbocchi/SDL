@@ -409,10 +409,11 @@ static napi_value OHOS_Napi_UpdateLocale(napi_env env, napi_callback_info info)
 static napi_value OHOS_Napi_RegisterInterface(napi_env env, napi_value exports)
 {
     napi_property_descriptor desc[] = {
-        { "registerWindowRequestCallback", NULL, OHOS_ThreadSafe_RegisterCallWindowRequest, NULL, NULL, NULL, napi_default, NULL },
-        { "attachWindowSurface", NULL, OHOS_NodeContent_AttachWindowSurface, NULL, NULL, NULL, napi_default, NULL },
-        { "detachWindowSurface", NULL, OHOS_NodeContent_DetachWindowSurface, NULL, NULL, NULL, napi_default, NULL },
-        { "notifyWindowReady", NULL, OHOS_Window_NotifyWindowReady, NULL, NULL, NULL, napi_default, NULL },
+        { "registerWindowRequestCallback", NULL, OHOS_WindowRequest_RegisterCallback, NULL, NULL, NULL, napi_default, NULL },
+        { "attachWindowSurface", NULL, OHOS_Napi_AttachWindowSurface, NULL, NULL, NULL, napi_default, NULL },
+        { "detachWindowSurface", NULL, OHOS_Napi_DetachWindowSurface, NULL, NULL, NULL, napi_default, NULL },
+        { "notifyWindowReady", NULL, OHOS_Napi_NotifyWindowReady, NULL, NULL, NULL, napi_default, NULL },
+        { "notifyWindowDestroyed", NULL, OHOS_Napi_NotifyWindowDestroyed, NULL, NULL, NULL, napi_default, NULL },
     };
 
     napi_define_properties(env, exports, SDL_arraysize(desc), desc);

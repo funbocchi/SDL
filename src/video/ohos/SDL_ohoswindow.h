@@ -24,22 +24,32 @@
 #ifndef SDL_OHOSWINDOW_H
 #define SDL_OHOSWINDOW_H
 
-#include <ace/xcomponent/native_interface_xcomponent.h>
 #include <napi/native_api.h>
 
 #include "../SDL_sysvideo.h"
 #include "SDL_egl.h"
 #include "SDL_events.h"
+#include "SDL_mutex.h"
 
 /* Placeholder until the OHOS window backend is rebuilt. */
 typedef struct
 {
-    OHNativeWindow *surface;
-    SDL_bool surface_ready;
-    SDL_atomic_t visible;
+    int ref_count;
+    SDL_bool destroying;
+
+    SDL_atomic_t create_done;
+    SDL_atomic_t ohos_window_id;
+    SDL_sem *create_sem;
+
+    SDL_atomic_t sdl_destroying;
+    SDL_atomic_t platform_destroyed;
 } SDL_WindowData;
 
-extern napi_value OHOS_Napi_AttachNode(napi_env env, napi_callback_info info);
+extern napi_value OHOS_Napi_AttachWindowSurface(napi_env env, napi_callback_info info);
+extern napi_value OHOS_WindowRequest_RegisterCallback(napi_env env, napi_callback_info info);
+extern napi_value OHOS_Napi_DetachWindowSurface(napi_env env, napi_callback_info info);
+extern napi_value OHOS_Napi_NotifyWindowReady(napi_env env, napi_callback_info info);
+extern napi_value OHOS_Napi_NotifyWindowDestroyed(napi_env env, napi_callback_info info);
 
 /* Window hooks, in SDL_VideoDevice declaration order. */
 extern int OHOS_CreateWindow(_THIS, SDL_Window *window);

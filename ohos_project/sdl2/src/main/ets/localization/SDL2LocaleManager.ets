@@ -59,6 +59,6 @@ export class SDL2LocalManager {
     const locale: Intl.Locale = i18n.System.getSystemLocaleInstance();
     const language: string = locale.language;
     const region: string = locale.region ?? "";
-    sdl2.updateLocale(language, region);
+    // sdl2.updateLocale(language, region);
   }
 }
