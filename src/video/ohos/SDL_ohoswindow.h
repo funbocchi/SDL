@@ -31,6 +31,25 @@
 #include "SDL_events.h"
 #include "SDL_mutex.h"
 
+typedef enum OHOS_ArkUIWindowEventType
+{
+    OHOS_ARKUI_WINDOW_EVENT_SHOWN = 1,
+    OHOS_ARKUI_WINDOW_EVENT_ACTIVE = 2,
+    OHOS_ARKUI_WINDOW_EVENT_INACTIVE = 3,
+    OHOS_ARKUI_WINDOW_EVENT_HIDDEN = 4,
+    OHOS_ARKUI_WINDOW_EVENT_DESTROYED = 7
+} OHOS_ArkUIWindowEventType;
+
+typedef enum OHOS_ArkUIWindowStatusType
+{
+    OHOS_ARKUI_WINDOW_STATUS_UNDEFINED = 0,
+    OHOS_ARKUI_WINDOW_STATUS_FULL_SCREEN = 1,
+    OHOS_ARKUI_WINDOW_STATUS_MAXIMIZE = 2,
+    OHOS_ARKUI_WINDOW_STATUS_MINIMIZE = 3,
+    OHOS_ARKUI_WINDOW_STATUS_FLOATING = 4,
+    OHOS_ARKUI_WINDOW_STATUS_SPLIT_SCREEN = 5
+} OHOS_ArkUIWindowStatusType;
+
 /* Placeholder until the OHOS window backend is rebuilt. */
 typedef struct
 {
@@ -50,6 +69,34 @@ extern napi_value OHOS_WindowRequest_RegisterCallback(napi_env env, napi_callbac
 extern napi_value OHOS_Napi_DetachWindowSurface(napi_env env, napi_callback_info info);
 extern napi_value OHOS_Napi_NotifyWindowReady(napi_env env, napi_callback_info info);
 extern napi_value OHOS_Napi_NotifyWindowDestroyed(napi_env env, napi_callback_info info);
+extern napi_value OHOS_Napi_NotifyWindowEvent(napi_env env, napi_callback_info info);
+extern napi_value OHOS_Napi_NotifyWindowStatusChange(napi_env env, napi_callback_info info);
+extern napi_value OHOS_Napi_NotifyWindowStatusDidChange(napi_env env, napi_callback_info info);
+extern napi_value OHOS_Napi_NotifyWindowSizeChange(napi_env env, napi_callback_info info);
+extern napi_value OHOS_Napi_NotifyWindowRectChange(napi_env env, napi_callback_info info);
+extern napi_value OHOS_Napi_NotifyWindowVisibilityChange(napi_env env, napi_callback_info info);
+extern napi_value OHOS_Napi_NotifyWindowAvoidAreaChange(napi_env env, napi_callback_info info);
+extern napi_value OHOS_Napi_NotifyWindowSystemAvoidAreaChange(napi_env env, napi_callback_info info);
+extern napi_value OHOS_Napi_NotifyWindowKeyboardHeightChange(napi_env env, napi_callback_info info);
+extern napi_value OHOS_Napi_NotifyWindowKeyboardWillShow(napi_env env, napi_callback_info info);
+extern napi_value OHOS_Napi_NotifyWindowKeyboardDidShow(napi_env env, napi_callback_info info);
+extern napi_value OHOS_Napi_NotifyWindowKeyboardWillHide(napi_env env, napi_callback_info info);
+extern napi_value OHOS_Napi_NotifyWindowKeyboardDidHide(napi_env env, napi_callback_info info);
+extern napi_value OHOS_Napi_NotifyWindowTouchOutside(napi_env env, napi_callback_info info);
+extern napi_value OHOS_Napi_NotifyWindowDisplayIdChange(napi_env env, napi_callback_info info);
+extern napi_value OHOS_Napi_NotifyWindowSystemDensityChange(napi_env env, napi_callback_info info);
+extern napi_value OHOS_Napi_NotifyWindowNoInteractionDetected(napi_env env, napi_callback_info info);
+extern napi_value OHOS_Napi_NotifyWindowScreenshot(napi_env env, napi_callback_info info);
+extern napi_value OHOS_Napi_NotifyWindowScreenshotAppEvent(napi_env env, napi_callback_info info);
+extern napi_value OHOS_Napi_NotifyWindowDialogTargetTouch(napi_env env, napi_callback_info info);
+extern napi_value OHOS_Napi_NotifyWindowHighlightChange(napi_env env, napi_callback_info info);
+extern napi_value OHOS_Napi_NotifyWindowTitleButtonRectChange(napi_env env, napi_callback_info info);
+extern napi_value OHOS_Napi_NotifyWindowFreeWindowModeChange(napi_env env, napi_callback_info info);
+extern napi_value OHOS_Napi_NotifyWindowOcclusionStateChange(napi_env env, napi_callback_info info);
+extern napi_value OHOS_Napi_NotifyWindowFrameMetricsMeasured(napi_env env, napi_callback_info info);
+extern napi_value OHOS_Napi_NotifyWindowRotationChange(napi_env env, napi_callback_info info);
+extern napi_value OHOS_Napi_NotifyWindowWillClose(napi_env env, napi_callback_info info);
+extern napi_value OHOS_Napi_NotifyWindowSubWindowClose(napi_env env, napi_callback_info info);
 
 /* Window hooks, in SDL_VideoDevice declaration order. */
 extern int OHOS_CreateWindow(_THIS, SDL_Window *window);

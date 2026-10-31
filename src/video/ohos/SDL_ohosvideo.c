@@ -185,35 +185,22 @@ static int OHOS_VideoInit(_THIS)
         display.current_mode = mode;
 
         display.name = display_info->name; /* Pass it to the subsequent SDL_AddVideoDisplay for memory allocation */
-
         display.orientation = OHOS_Tool_OrientationToSDL(display_info->orientation);
-
         dis_data->id = display_info->id;
-
         dis_data->width = display_info->width;
         dis_data->height = display_info->height;
-
         dis_data->physical_width = display_info->physicalWidth;
         dis_data->physical_height = display_info->physicalHeight;
-
         dis_data->refresh_rate = display_info->refreshRate;
-
         dis_data->available_width = display_info->availableWidth;
         dis_data->available_height = display_info->availableHeight;
-
         dis_data->density_dpi = display_info->densityDPI;
-
         dis_data->density_pixels = display_info->densityPixels;
-
         dis_data->scaled_density = display_info->scaledDensity;
-
         dis_data->x_dpi = display_info->xDPI;
         dis_data->y_dpi = display_info->yDPI;
-
         dis_data->rotation = display_info->rotation;
-
         dis_data->state = display_info->state;
-
         dis_data->orientation = display_info->orientation;
 
         if ((err_code = OH_NativeDisplayManager_GetDisplayPosition(dis_data->id, &dis_data->x_offset, &dis_data->y_offset)) != DISPLAY_MANAGER_OK) {
@@ -298,6 +285,11 @@ static int OHOS_GetDisplayDPI(_THIS, SDL_VideoDisplay *display, float *ddpi, flo
         return SDL_SetError("OHOS_GetDisplayDPI: no driverdata");
     }
 
+    SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO,
+                 "OHOS display: mode=%dx%d x_dpi=%.2f y_dpi=%.2f density_pixels=%.2f scaled_density=%.2f",
+                 display->desktop_mode.w, display->desktop_mode.h,
+                 data->x_dpi, data->y_dpi, data->density_pixels, data->scaled_density);
+
     if (hdpi) {
         *hdpi = data->x_dpi;
     }
@@ -358,41 +350,40 @@ static SDL_VideoDevice *OHOS_CreateDevice(void)
     device->CreateSDLWindow = OHOS_CreateWindow;
     device->CreateSDLWindowFrom = OHOS_CreateWindowFrom;
     device->SetWindowTitle = OHOS_SetWindowTitle;
-    device->SetWindowIcon;
+    device->SetWindowIcon = OHOS_SetWindowIcon;
     device->SetWindowPosition = OHOS_SetWindowPosition;
     device->SetWindowSize = OHOS_SetWindowSize;
-    device->SetWindowMinimumSize;
-    device->SetWindowMaximumSize;
-    device->GetWindowBordersSize;
-    device->GetWindowSizeInPixels;
-    device->SetWindowOpacity;
-    device->SetWindowModalFor;
-    device->SetWindowInputFocus;
+    device->SetWindowMinimumSize = OHOS_SetWindowMinimumSize;
+    device->SetWindowMaximumSize = OHOS_SetWindowMaximumSize;
+    device->GetWindowBordersSize = OHOS_GetWindowBordersSize;
+    device->GetWindowSizeInPixels = OHOS_GetWindowSizeInPixels;
+    device->SetWindowOpacity = OHOS_SetWindowOpacity;
+    device->SetWindowModalFor = OHOS_SetWindowModalFor;
+    device->SetWindowInputFocus = OHOS_SetWindowInputFocus;
     device->ShowWindow = OHOS_ShowWindow;
     device->HideWindow = OHOS_HideWindow;
-    device->RaiseWindow;
-    device->MaximizeWindow;
-    device->MinimizeWindow;
-    device->RestoreWindow;
-    device->SetWindowBordered;
-    device->SetWindowResizable;
-    device->SetWindowAlwaysOnTop;
-    device->SetWindowFullscreen;
-    device->SetWindowGammaRamp;
-    device->GetWindowGammaRamp;
-    device->GetWindowICCProfile;
+    device->RaiseWindow = OHOS_RaiseWindow;
+    device->MaximizeWindow = OHOS_MaximizeWindow;
+    device->MinimizeWindow = OHOS_MinimizeWindow;
+    device->RestoreWindow = OHOS_RestoreWindow;
+    device->SetWindowBordered = OHOS_SetWindowBordered;
+    device->SetWindowResizable = OHOS_SetWindowResizable;
+    device->SetWindowAlwaysOnTop = OHOS_SetWindowAlwaysOnTop;
+    device->SetWindowFullscreen = OHOS_SetWindowFullscreen;
+    device->SetWindowGammaRamp = OHOS_SetWindowGammaRamp;
+    device->GetWindowGammaRamp = OHOS_GetWindowGammaRamp;
+    device->GetWindowICCProfile = OHOS_GetWindowICCProfile;
     device->GetWindowDisplayIndex = OHOS_GetWindowDisplayIndex;
-    device->SetWindowMouseRect;
-    device->SetWindowMouseGrab;
-    device->SetWindowKeyboardGrab;
+    device->SetWindowMouseRect = OHOS_SetWindowMouseRect;
+    device->SetWindowMouseGrab = OHOS_SetWindowMouseGrab;
+    device->SetWindowKeyboardGrab = OHOS_SetWindowKeyboardGrab;
     device->DestroyWindow = OHOS_DestroyWindow;
-    device->CreateWindowFramebuffer;
-    device->UpdateWindowFramebuffer;
-    device->DestroyWindowFramebuffer;
-    device->OnWindowEnter;
-    device->FlashWindow;
+    device->CreateWindowFramebuffer = OHOS_CreateWindowFramebuffer;
+    device->UpdateWindowFramebuffer = OHOS_UpdateWindowFramebuffer;
+    device->DestroyWindowFramebuffer = OHOS_DestroyWindowFramebuffer;
+    device->OnWindowEnter = OHOS_OnWindowEnter;
+    device->FlashWindow = OHOS_FlashWindow;
 
-    /* GLES */
 #ifdef SDL_VIDEO_OPENGL_EGL
     device->GL_LoadLibrary = OHOS_GL_LoadLibrary;
     device->GL_GetProcAddress = OHOS_GL_GetProcAddress;
@@ -407,7 +398,6 @@ static SDL_VideoDevice *OHOS_CreateDevice(void)
     device->GL_DefaultProfileConfig = OHOS_GL_DefaultProfileConfig;
 #endif
 
-    /* Vulkan*/
 #ifdef SDL_VIDEO_VULKAN
     device->Vulkan_LoadLibrary;
     device->Vulkan_UnloadLibrary;

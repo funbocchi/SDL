@@ -28,12 +28,14 @@
 typedef struct OH_PixelmapNative OH_PixelmapNative;
 
 #include <ace/xcomponent/native_interface_xcomponent.h>
+#include <window_manager/oh_window.h>
 #include <arkui/native_interface.h>
 #include <arkui/native_node.h>
 #include <arkui/native_node_napi.h>
 
 #include "SDL_ohosevents.h"
 #include "SDL_timer.h"
+#include "../../events/SDL_windowevents_c.h"
 #ifdef SDL_VIDEO_OPENGL_EGL
 #include "SDL_ohosgles.h"
 #endif
@@ -638,7 +640,7 @@ static void OHOS_SurfaceHolder_OnDestroyedCB(OH_ArkUI_SurfaceHolder *holder)
 static void OHOS_SurfaceHolder_OnShowCB(OH_ArkUI_SurfaceHolder *holder)
 {
 #ifdef SDL_VIDEO_OPENGL_EGL
-    OHOS_GLWindowSurface *surface;
+    SDL_Event event;
     Uint32 id;
 
     if (!holder) {
@@ -650,19 +652,19 @@ static void OHOS_SurfaceHolder_OnShowCB(OH_ArkUI_SurfaceHolder *holder)
         return;
     }
 
-    surface = OHOS_GLRegistry_Acquire(id);
-    if (!surface) {
-        return;
-    }
-
-    SDL_AtomicSet(&surface->surface_visible, SDL_TRUE);
-    OHOS_GLRegistry_Release(surface);
+    SDL_zero(event);
+    event.type = g_ohos_event_base + OHOS_EVENT_GL;
+    event.user.code = OHOS_GL_EVENT_SURFACE_SHOWN;
+    event.user.windowID = id;
+    event.user.data1 = NULL;
+    event.user.data2 = NULL;
+    SDL_PushEvent(&event);
 #endif
 }
 static void OHOS_SurfaceHolder_OnHideCB(OH_ArkUI_SurfaceHolder *holder)
 {
 #ifdef SDL_VIDEO_OPENGL_EGL
-    OHOS_GLWindowSurface *surface;
+    SDL_Event event;
     Uint32 id;
 
     if (!holder) {
@@ -674,20 +676,47 @@ static void OHOS_SurfaceHolder_OnHideCB(OH_ArkUI_SurfaceHolder *holder)
         return;
     }
 
-    surface = OHOS_GLRegistry_Acquire(id);
-    if (!surface) {
-        return;
-    }
-
-    SDL_AtomicSet(&surface->surface_visible, SDL_FALSE);
-    OHOS_GLRegistry_Release(surface);
+    SDL_zero(event);
+    event.type = g_ohos_event_base + OHOS_EVENT_GL;
+    event.user.code = OHOS_GL_EVENT_SURFACE_HIDDEN;
+    event.user.windowID = id;
+    event.user.data1 = NULL;
+    event.user.data2 = NULL;
+    SDL_PushEvent(&event);
 #endif
 }
 
-typedef enum OHOS_WindowEventCode
+typedef enum OHOS_WindowNotification
 {
-    OHOS_WINDOW_EVENT_INIT_WINDOWID = 0,
-} OHOS_WindowEventCode;
+    OHOS_WINDOW_NOTIFY_WINDOW_EVENT = 0,
+    OHOS_WINDOW_NOTIFY_STATUS_CHANGE,
+    OHOS_WINDOW_NOTIFY_STATUS_DID_CHANGE,
+    OHOS_WINDOW_NOTIFY_SIZE_CHANGE,
+    OHOS_WINDOW_NOTIFY_RECT_CHANGE,
+    OHOS_WINDOW_NOTIFY_VISIBILITY_CHANGE,
+    OHOS_WINDOW_NOTIFY_AVOID_AREA_CHANGE,
+    OHOS_WINDOW_NOTIFY_SYSTEM_AVOID_AREA_CHANGE,
+    OHOS_WINDOW_NOTIFY_KEYBOARD_HEIGHT_CHANGE,
+    OHOS_WINDOW_NOTIFY_KEYBOARD_WILL_SHOW,
+    OHOS_WINDOW_NOTIFY_KEYBOARD_DID_SHOW,
+    OHOS_WINDOW_NOTIFY_KEYBOARD_WILL_HIDE,
+    OHOS_WINDOW_NOTIFY_KEYBOARD_DID_HIDE,
+    OHOS_WINDOW_NOTIFY_TOUCH_OUTSIDE,
+    OHOS_WINDOW_NOTIFY_DISPLAY_ID_CHANGE,
+    OHOS_WINDOW_NOTIFY_SYSTEM_DENSITY_CHANGE,
+    OHOS_WINDOW_NOTIFY_NO_INTERACTION_DETECTED,
+    OHOS_WINDOW_NOTIFY_SCREENSHOT,
+    OHOS_WINDOW_NOTIFY_SCREENSHOT_APP_EVENT,
+    OHOS_WINDOW_NOTIFY_DIALOG_TARGET_TOUCH,
+    OHOS_WINDOW_NOTIFY_HIGHLIGHT_CHANGE,
+    OHOS_WINDOW_NOTIFY_TITLE_BUTTON_RECT_CHANGE,
+    OHOS_WINDOW_NOTIFY_FREE_WINDOW_MODE_CHANGE,
+    OHOS_WINDOW_NOTIFY_OCCLUSION_STATE_CHANGE,
+    OHOS_WINDOW_NOTIFY_FRAME_METRICS_MEASURED,
+    OHOS_WINDOW_NOTIFY_ROTATION_CHANGE,
+    OHOS_WINDOW_NOTIFY_WILL_CLOSE,
+    OHOS_WINDOW_NOTIFY_SUB_WINDOW_CLOSE
+} OHOS_WindowNotification;
 
 static ArkUI_NativeNodeAPI_1 *g_node_api = NULL;
 
@@ -897,6 +926,289 @@ napi_value OHOS_Napi_NotifyWindowDestroyed(napi_env env, napi_callback_info info
     return retval;
 }
 
+static napi_value OHOS_Napi_ReturnUndefined(napi_env env)
+{
+    napi_value retval = NULL;
+
+    napi_get_undefined(env, &retval);
+    return retval;
+}
+
+static SDL_bool OHOS_Napi_GetWindowArgs(napi_env env, napi_callback_info info, size_t *argc,
+                                        napi_value *args, Uint32 *id, const char *name)
+{
+    if (napi_get_cb_info(env, info, argc, args, NULL, NULL) != napi_ok || *argc < 1) {
+        napi_throw_error(env, NULL, name);
+        return SDL_FALSE;
+    }
+    if (napi_get_value_uint32(env, args[0], id) != napi_ok || *id == 0) {
+        napi_throw_error(env, NULL, name);
+        return SDL_FALSE;
+    }
+    return SDL_TRUE;
+}
+
+static void OHOS_PushWindowNotification(Uint32 id, OHOS_WindowNotification notification,
+                                        intptr_t data1, intptr_t data2)
+{
+    SDL_Event event;
+
+    SDL_zero(event);
+    event.type = g_ohos_event_base + OHOS_EVENT_WINDOW;
+    event.user.code = notification;
+    event.user.windowID = id;
+    event.user.data1 = (void *)data1;
+    event.user.data2 = (void *)data2;
+    SDL_PushEvent(&event);
+}
+
+napi_value OHOS_Napi_NotifyWindowEvent(napi_env env, napi_callback_info info)
+{
+    size_t argc = 2;
+    napi_value args[2] = { NULL, NULL };
+    Uint32 id = 0;
+    int32_t window_event = 0;
+    SDL_WindowData *data;
+
+    if (!OHOS_Napi_GetWindowArgs(env, info, &argc, args, &id, "notifyWindowEvent")) {
+        return NULL;
+    }
+
+    data = OHOS_WindowRegistry_Acquire(id);
+    if (!data) {
+        return OHOS_Napi_ReturnUndefined(env);
+    }
+
+    if (argc < 2 || napi_get_value_int32(env, args[1], &window_event) != napi_ok) {
+        OHOS_WindowRegistry_Release(data);
+        napi_throw_error(env, NULL, "notifyWindowEvent: invalid event");
+        return NULL;
+    }
+
+    OHOS_PushWindowNotification(id, OHOS_WINDOW_NOTIFY_WINDOW_EVENT, window_event, 0);
+
+    OHOS_WindowRegistry_Release(data);
+    return OHOS_Napi_ReturnUndefined(env);
+}
+
+static napi_value OHOS_Napi_NotifyWindowStatus(napi_env env, napi_callback_info info,
+                                               OHOS_WindowNotification notification,
+                                               const char *name)
+{
+    size_t argc = 2;
+    napi_value args[2] = { NULL, NULL };
+    Uint32 id = 0;
+    int32_t status = 0;
+    SDL_WindowData *data;
+
+    if (!OHOS_Napi_GetWindowArgs(env, info, &argc, args, &id, name)) {
+        return NULL;
+    }
+
+    data = OHOS_WindowRegistry_Acquire(id);
+    if (!data) {
+        return OHOS_Napi_ReturnUndefined(env);
+    }
+
+    if (argc < 2 || napi_get_value_int32(env, args[1], &status) != napi_ok) {
+        OHOS_WindowRegistry_Release(data);
+        napi_throw_error(env, NULL, name);
+        return NULL;
+    }
+
+    OHOS_PushWindowNotification(id, notification, status, 0);
+
+    OHOS_WindowRegistry_Release(data);
+    return OHOS_Napi_ReturnUndefined(env);
+}
+
+napi_value OHOS_Napi_NotifyWindowStatusChange(napi_env env, napi_callback_info info)
+{
+    return OHOS_Napi_NotifyWindowStatus(env, info, OHOS_WINDOW_NOTIFY_STATUS_CHANGE,
+                                        "notifyWindowStatusChange");
+}
+
+napi_value OHOS_Napi_NotifyWindowStatusDidChange(napi_env env, napi_callback_info info)
+{
+    return OHOS_Napi_NotifyWindowStatus(env, info, OHOS_WINDOW_NOTIFY_STATUS_DID_CHANGE,
+                                        "notifyWindowStatusDidChange");
+}
+
+napi_value OHOS_Napi_NotifyWindowSizeChange(napi_env env, napi_callback_info info)
+{
+    size_t argc = 2;
+    napi_value args[2] = { NULL, NULL };
+    napi_value width_value = NULL;
+    napi_value height_value = NULL;
+    Uint32 id = 0;
+    int32_t width = 0;
+    int32_t height = 0;
+    SDL_WindowData *data;
+
+    if (!OHOS_Napi_GetWindowArgs(env, info, &argc, args, &id, "notifyWindowSizeChange")) {
+        return NULL;
+    }
+
+    data = OHOS_WindowRegistry_Acquire(id);
+    if (!data) {
+        return OHOS_Napi_ReturnUndefined(env);
+    }
+
+    if (argc < 2 ||
+        napi_get_named_property(env, args[1], "width", &width_value) != napi_ok ||
+        napi_get_named_property(env, args[1], "height", &height_value) != napi_ok ||
+        napi_get_value_int32(env, width_value, &width) != napi_ok ||
+        napi_get_value_int32(env, height_value, &height) != napi_ok) {
+        OHOS_WindowRegistry_Release(data);
+        napi_throw_error(env, NULL, "notifyWindowSizeChange: invalid size");
+        return NULL;
+    }
+
+    OHOS_PushWindowNotification(id, OHOS_WINDOW_NOTIFY_SIZE_CHANGE, width, height);
+
+    OHOS_WindowRegistry_Release(data);
+    return OHOS_Napi_ReturnUndefined(env);
+}
+
+static napi_value OHOS_Napi_NotifyWindowNoop(napi_env env, napi_callback_info info, const char *name)
+{
+    size_t argc = 2;
+    napi_value args[2] = { NULL, NULL };
+    Uint32 id = 0;
+    SDL_WindowData *data;
+
+    if (!OHOS_Napi_GetWindowArgs(env, info, &argc, args, &id, name)) {
+        return NULL;
+    }
+
+    data = OHOS_WindowRegistry_Acquire(id);
+    if (data) {
+        OHOS_WindowRegistry_Release(data);
+    }
+
+    return OHOS_Napi_ReturnUndefined(env);
+}
+
+napi_value OHOS_Napi_NotifyWindowRectChange(napi_env env, napi_callback_info info)
+{
+    return OHOS_Napi_NotifyWindowNoop(env, info, "notifyWindowRectChange");
+}
+
+napi_value OHOS_Napi_NotifyWindowVisibilityChange(napi_env env, napi_callback_info info)
+{
+    return OHOS_Napi_NotifyWindowNoop(env, info, "notifyWindowVisibilityChange");
+}
+
+napi_value OHOS_Napi_NotifyWindowAvoidAreaChange(napi_env env, napi_callback_info info)
+{
+    return OHOS_Napi_NotifyWindowNoop(env, info, "notifyWindowAvoidAreaChange");
+}
+
+napi_value OHOS_Napi_NotifyWindowSystemAvoidAreaChange(napi_env env, napi_callback_info info)
+{
+    return OHOS_Napi_NotifyWindowNoop(env, info, "notifyWindowSystemAvoidAreaChange");
+}
+
+napi_value OHOS_Napi_NotifyWindowKeyboardHeightChange(napi_env env, napi_callback_info info)
+{
+    return OHOS_Napi_NotifyWindowNoop(env, info, "notifyWindowKeyboardHeightChange");
+}
+
+napi_value OHOS_Napi_NotifyWindowKeyboardWillShow(napi_env env, napi_callback_info info)
+{
+    return OHOS_Napi_NotifyWindowNoop(env, info, "notifyWindowKeyboardWillShow");
+}
+
+napi_value OHOS_Napi_NotifyWindowKeyboardDidShow(napi_env env, napi_callback_info info)
+{
+    return OHOS_Napi_NotifyWindowNoop(env, info, "notifyWindowKeyboardDidShow");
+}
+
+napi_value OHOS_Napi_NotifyWindowKeyboardWillHide(napi_env env, napi_callback_info info)
+{
+    return OHOS_Napi_NotifyWindowNoop(env, info, "notifyWindowKeyboardWillHide");
+}
+
+napi_value OHOS_Napi_NotifyWindowKeyboardDidHide(napi_env env, napi_callback_info info)
+{
+    return OHOS_Napi_NotifyWindowNoop(env, info, "notifyWindowKeyboardDidHide");
+}
+
+napi_value OHOS_Napi_NotifyWindowTouchOutside(napi_env env, napi_callback_info info)
+{
+    return OHOS_Napi_NotifyWindowNoop(env, info, "notifyWindowTouchOutside");
+}
+
+napi_value OHOS_Napi_NotifyWindowDisplayIdChange(napi_env env, napi_callback_info info)
+{
+    return OHOS_Napi_NotifyWindowNoop(env, info, "notifyWindowDisplayIdChange");
+}
+
+napi_value OHOS_Napi_NotifyWindowSystemDensityChange(napi_env env, napi_callback_info info)
+{
+    return OHOS_Napi_NotifyWindowNoop(env, info, "notifyWindowSystemDensityChange");
+}
+
+napi_value OHOS_Napi_NotifyWindowNoInteractionDetected(napi_env env, napi_callback_info info)
+{
+    return OHOS_Napi_NotifyWindowNoop(env, info, "notifyWindowNoInteractionDetected");
+}
+
+napi_value OHOS_Napi_NotifyWindowScreenshot(napi_env env, napi_callback_info info)
+{
+    return OHOS_Napi_NotifyWindowNoop(env, info, "notifyWindowScreenshot");
+}
+
+napi_value OHOS_Napi_NotifyWindowScreenshotAppEvent(napi_env env, napi_callback_info info)
+{
+    return OHOS_Napi_NotifyWindowNoop(env, info, "notifyWindowScreenshotAppEvent");
+}
+
+napi_value OHOS_Napi_NotifyWindowDialogTargetTouch(napi_env env, napi_callback_info info)
+{
+    return OHOS_Napi_NotifyWindowNoop(env, info, "notifyWindowDialogTargetTouch");
+}
+
+napi_value OHOS_Napi_NotifyWindowHighlightChange(napi_env env, napi_callback_info info)
+{
+    return OHOS_Napi_NotifyWindowNoop(env, info, "notifyWindowHighlightChange");
+}
+
+napi_value OHOS_Napi_NotifyWindowTitleButtonRectChange(napi_env env, napi_callback_info info)
+{
+    return OHOS_Napi_NotifyWindowNoop(env, info, "notifyWindowTitleButtonRectChange");
+}
+
+napi_value OHOS_Napi_NotifyWindowFreeWindowModeChange(napi_env env, napi_callback_info info)
+{
+    return OHOS_Napi_NotifyWindowNoop(env, info, "notifyWindowFreeWindowModeChange");
+}
+
+napi_value OHOS_Napi_NotifyWindowOcclusionStateChange(napi_env env, napi_callback_info info)
+{
+    return OHOS_Napi_NotifyWindowNoop(env, info, "notifyWindowOcclusionStateChange");
+}
+
+napi_value OHOS_Napi_NotifyWindowFrameMetricsMeasured(napi_env env, napi_callback_info info)
+{
+    return OHOS_Napi_NotifyWindowNoop(env, info, "notifyWindowFrameMetricsMeasured");
+}
+
+napi_value OHOS_Napi_NotifyWindowRotationChange(napi_env env, napi_callback_info info)
+{
+    return OHOS_Napi_NotifyWindowNoop(env, info, "notifyWindowRotationChange");
+}
+
+napi_value OHOS_Napi_NotifyWindowWillClose(napi_env env, napi_callback_info info)
+{
+    return OHOS_Napi_NotifyWindowNoop(env, info, "notifyWindowWillClose");
+}
+
+napi_value OHOS_Napi_NotifyWindowSubWindowClose(napi_env env, napi_callback_info info)
+{
+    return OHOS_Napi_NotifyWindowNoop(env, info, "notifyWindowSubWindowClose");
+}
+
 /* Window hooks, in SDL_VideoDevice declaration order. */
 
 static int OHOS_Window_PostRequest(OHOS_WindowRequest *request)
@@ -1028,6 +1340,39 @@ int OHOS_CreateWindow(_THIS, SDL_Window *window)
 
     if (!SDL_AtomicGet(&data->create_done)) {
         return SDL_SetError("OHOS window creation timed out");
+    }
+
+    {
+        Uint32 sdl_window_id = window->id;
+        Uint32 ohos_window_id = (Uint32)SDL_AtomicGet(&data->ohos_window_id);
+        WindowManager_WindowProperties properties;
+        bool is_shown = false;
+        int32_t properties_ret;
+        int32_t shown_ret;
+
+        SDL_zero(properties);
+        properties_ret = OH_WindowManager_GetWindowProperties(
+            (int32_t)ohos_window_id, &properties);
+        shown_ret = OH_WindowManager_IsWindowShown(
+            (int32_t)ohos_window_id, &is_shown);
+
+        if (properties_ret == 0) {
+            SDL_Log("OHOS_CreateWindow: sdl_id=%u ohos_id=%u "
+                    "windowRect=(%d,%d,%u,%u) drawableRect=(%d,%d,%u,%u) "
+                    "displayId=%u fullscreen=%d shown_ret=%d shown=%d",
+                    sdl_window_id, ohos_window_id,
+                    properties.windowRect.posX, properties.windowRect.posY,
+                    properties.windowRect.width, properties.windowRect.height,
+                    properties.drawableRect.posX, properties.drawableRect.posY,
+                    properties.drawableRect.width, properties.drawableRect.height,
+                    properties.displayId, properties.isFullScreen > 0,
+                    shown_ret, is_shown > 0);
+        } else {
+            SDL_Log("OHOS_CreateWindow: GetWindowProperties failed: sdl_id=%u ohos_id=%u ret=%d",
+                    sdl_window_id, ohos_window_id, properties_ret);
+        }
+
+        OH_WindowManager_SetWindowStatusBarColor((Sint32)ohos_window_id, 0x00);
     }
 
     return 0;
@@ -1249,6 +1594,55 @@ int OHOS_FlashWindow(_THIS, SDL_Window *window, SDL_FlashOperation operation)
 /* Backend-internal hook used by OHOS_PumpEvents. */
 void OHOS_Window_HandleEvents(_THIS, const SDL_Event *event)
 {
+    SDL_WindowData *data;
+    SDL_Window *window;
+
+    (void)_this;
+
+    if (!event) {
+        return;
+    }
+
+    data = OHOS_WindowRegistry_Acquire(event->user.windowID);
+    if (!data) {
+        return;
+    }
+
+    window = SDL_GetWindowFromID(event->user.windowID);
+    if (window) {
+        switch ((OHOS_WindowNotification)event->user.code) {
+        case OHOS_WINDOW_NOTIFY_WINDOW_EVENT:
+            switch ((OHOS_ArkUIWindowEventType)(intptr_t)event->user.data1) {
+            case OHOS_ARKUI_WINDOW_EVENT_SHOWN:
+                SDL_SendWindowEvent(window, SDL_WINDOWEVENT_SHOWN, 0, 0);
+                break;
+            case OHOS_ARKUI_WINDOW_EVENT_ACTIVE:
+                SDL_SendWindowEvent(window, SDL_WINDOWEVENT_FOCUS_GAINED, 0, 0);
+                break;
+            case OHOS_ARKUI_WINDOW_EVENT_INACTIVE:
+                SDL_SendWindowEvent(window, SDL_WINDOWEVENT_FOCUS_LOST, 0, 0);
+                break;
+            case OHOS_ARKUI_WINDOW_EVENT_HIDDEN:
+                SDL_SendWindowEvent(window, SDL_WINDOWEVENT_HIDDEN, 0, 0);
+                break;
+            case OHOS_ARKUI_WINDOW_EVENT_DESTROYED:
+                SDL_SendWindowEvent(window, SDL_WINDOWEVENT_CLOSE, 0, 0);
+                break;
+            default:
+                break;
+            }
+            break;
+        case OHOS_WINDOW_NOTIFY_SIZE_CHANGE:
+            SDL_SendWindowEvent(window, SDL_WINDOWEVENT_SIZE_CHANGED,
+                               (int)(intptr_t)event->user.data1,
+                               (int)(intptr_t)event->user.data2);
+            break;
+        default:
+            break;
+        }
+    }
+
+    OHOS_WindowRegistry_Release(data);
 }
 
 #endif /* SDL_VIDEO_DRIVER_OHOS */

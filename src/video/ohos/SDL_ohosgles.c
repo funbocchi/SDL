@@ -71,7 +71,6 @@ int OHOS_GLRegistry_Register(Uint32 id)
     entry->window_surface = EGL_NO_SURFACE;
     entry->window_surface_generation = 0;
     SDL_AtomicSet(&entry->surface_generation, 0);
-    SDL_AtomicSet(&entry->surface_visible, SDL_FALSE);
     SDL_AtomicSet(&entry->window_surface_ready, SDL_FALSE);
     SDL_AtomicSet(&entry->drawable_width, 0);
     SDL_AtomicSet(&entry->drawable_height, 0);
@@ -205,7 +204,6 @@ static void OHOS_GLRegistry_FreeEntry(OHOS_GLWindowSurface *surface)
     surface->offscreen_surface = EGL_NO_SURFACE;
     surface->window_surface_generation = 0;
 
-    SDL_AtomicSet(&surface->surface_visible, SDL_FALSE);
     SDL_AtomicSet(&surface->window_surface_ready, SDL_FALSE);
     SDL_AtomicSet(&surface->surface_generation, 0);
 
@@ -256,7 +254,6 @@ static void OHOS_GL_HandleSurfaceDestroyed(_THIS, const SDL_Event *event)
 
     surface->window_surface = EGL_NO_SURFACE;
     surface->window_surface_generation = 0;
-    SDL_AtomicSet(&surface->surface_visible, SDL_FALSE);
 
     OHOS_GLRegistry_Release(surface);
 }
@@ -304,8 +301,6 @@ static void OHOS_GL_HandleSurfaceCreated(_THIS, const SDL_Event *event)
 
     surface->window_surface = new_surface;
     surface->window_surface_generation = generation;
-    SDL_AtomicSet(&surface->window_surface_ready, SDL_FALSE);
-    SDL_AtomicSet(&surface->surface_visible, SDL_TRUE);
 
     OHOS_GLRegistry_Release(surface);
 }
@@ -363,6 +358,9 @@ void OHOS_GL_HandleEvents(_THIS, const SDL_Event *event)
         break;
     case OHOS_GL_EVENT_SURFACE_CHANGED:
         OHOS_GL_HandleSurfaceChanged(_this, event);
+        break;
+    case OHOS_GL_EVENT_SURFACE_SHOWN:
+    case OHOS_GL_EVENT_SURFACE_HIDDEN:
         break;
     default:
         break;
@@ -536,8 +534,7 @@ int OHOS_GL_SwapWindow(_THIS, SDL_Window *window)
 
     if (entry->window_surface == EGL_NO_SURFACE ||
         !SDL_AtomicGet(&entry->window_surface_ready) ||
-        SDL_AtomicGet(&entry->surface_generation) != entry->window_surface_generation ||
-        !SDL_AtomicGet(&entry->surface_visible)) {
+        SDL_AtomicGet(&entry->surface_generation) != entry->window_surface_generation) {
         OHOS_GLRegistry_Release(entry);
         return 0;
     }

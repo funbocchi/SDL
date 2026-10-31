@@ -39,7 +39,6 @@ typedef struct OHOS_GLWindowSurface
     SDL_bool destroying;
 
     SDL_atomic_t surface_generation;
-    SDL_atomic_t surface_visible;
     SDL_atomic_t window_surface_ready;
     SDL_atomic_t drawable_width;
     SDL_atomic_t drawable_height;
@@ -71,7 +70,7 @@ typedef enum OHOS_GLSurfaceEventCode
     OHOS_GL_EVENT_SURFACE_DESTROYED,
     OHOS_GL_EVENT_SURFACE_CHANGED,
     OHOS_GL_EVENT_SURFACE_SHOWN,
-    OHOS_GL_EVENT_SURFACE_HIDDEEN
+    OHOS_GL_EVENT_SURFACE_HIDDEN
 } OHOS_GLSurfaceEventCode;
 
 extern void OHOS_GL_HandleEvents(_THIS, const SDL_Event *event);
