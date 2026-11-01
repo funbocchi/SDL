@@ -83,23 +83,15 @@ static SDL_DisplayOrientation OHOS_Tool_OrientationToSDL(NativeDisplayManager_Or
     }
 }
 
-float OHOS_Display_GetDensityPixels(SDL_Window *window)
+float OHOS_DisplayTool_GetDensityPixels(SDL_Window *window)
 {
     SDL_VideoDisplay *display;
     float retval = 1.0f;
 
-    if (!window) {
-        SDL_SetError("invalid param");
-        goto endfunc;
-    }
-
     display = SDL_GetDisplayForWindow(window);
-    if (!display) {
-        goto endfunc;
+    if (display) {
+        retval = ((SDL_DisplayData *)display->driverdata)->density_pixels;
     }
-    retval = ((SDL_DisplayData *)display->driverdata)->density_pixels;
-
-endfunc:
     return retval;
 }
 
@@ -146,18 +138,15 @@ static int OHOS_VideoInit(_THIS)
         video_data->wake_write = fds[1];
         video_data->events_ready = SDL_TRUE;
     }
-
     if ((err_code = OH_NativeDisplayManager_CreateAllDisplays(&all_displays)) != DISPLAY_MANAGER_OK) {
         retval = SDL_SetError("OHOS VideoInit: OH_NativeDisplayManager_CreateAllDisplays failed, err_code: %s (%d)",
                               OHOS_Tool_DisplayManagerErrorToString(err_code), (int)err_code);
         goto errfunc;
     }
-
     if (all_displays == NULL) {
         retval = SDL_SetError("OHOS VideoInit: OH_NativeDisplayManager_CreateAllDisplays returned OK but all_displays is NULL (no display info available)");
         goto errfunc;
     }
-
     for (display_index = 0; display_index < all_displays->displaysLength; display_index++) {
         display_info = &(all_displays->displaysInfo[display_index]);
 

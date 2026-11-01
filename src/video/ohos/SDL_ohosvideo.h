@@ -42,33 +42,21 @@ typedef struct
 typedef struct
 {
     Uint32 id;
-
     Sint32 width, height;
-
     Sint32 physical_width, physical_height;
-
     Uint32 refresh_rate;
-
     Uint32 available_width, available_height;
-
     float density_dpi;
-
     float density_pixels;
-
     float scaled_density;
-
     float x_dpi, y_dpi;
-
     Sint32 x_offset, y_offset;
-
     NativeDisplayManager_Rotation rotation;
-
     NativeDisplayManager_DisplayState state;
-
     NativeDisplayManager_Orientation orientation;
 } SDL_DisplayData;
 
-extern float OHOS_Display_GetDensityPixels(SDL_Window *window);
+extern float OHOS_DisplayTool_GetDensityPixels(SDL_Window *window);
 
 extern const char *OHOS_Tool_DisplayManagerErrorToString(NativeDisplayManager_ErrorCode code);
 
