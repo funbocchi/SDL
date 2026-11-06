@@ -1848,7 +1848,7 @@ elseif(OHOS)
     set(SDL_VIDEO_DRIVER_OHOS 1)
     file(GLOB OHOS_VIDEO_SOURCES ${SDL2_SOURCE_DIR}/src/video/ohos/*.c)
     list(APPEND SOURCE_FILES ${OHOS_VIDEO_SOURCES})
-    list(APPEND EXTRA_LIBS native_display_manager native_window_manager)
+    list(APPEND EXTRA_LIBS native_display_manager native_window_manager native_window pixelmap)
     set(HAVE_SDL_VIDEO TRUE)
 
     if(SDL_OPENGLES)
@@ -3554,10 +3554,11 @@ if(SDL_SHARED)
       SOVERSION 0
       OUTPUT_NAME "SDL2-${LT_RELEASE}")
   elseif(OHOS)
+    # HarmonyOS packages do not preseve the symlinks they would generate.
     set_target_properties(SDL2 PROPERTIES
       VERSION ${LT_VERSION}
       SOVERSION ${LT_MAJOR}
-      OUTPUT_NAME "sdl2")
+      OUTPUT_NAME "SDL2")
   elseif(UNIX AND NOT ANDROID AND NOT OHOS)
     set_target_properties(SDL2 PROPERTIES
       VERSION ${LT_VERSION}

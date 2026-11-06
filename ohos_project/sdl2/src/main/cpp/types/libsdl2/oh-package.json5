@@ -1,6 +1,0 @@
-{
-  "name": "libsdl2.so",
-  "types": "./Index.d.ts",
-  "version": "2.33.0",
-  "description": "版本号对齐sdl官方仓"
-}
