@@ -30,6 +30,8 @@ typedef enum
 {
     OHOS_EVENT_WINDOW,
     OHOS_EVENT_GL,
+    OHOS_EVENT_MOUSE,
+    OHOS_EVENT_KEYBOARD,
     OHOS_EVENT_COUNT
 } OHOSEventType;
 

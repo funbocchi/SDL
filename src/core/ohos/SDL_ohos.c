@@ -18,450 +18,239 @@
      misrepresented as being the original software.
   3. This notice may not be removed or altered from any source distribution.
 */
+
 #include "../../SDL_internal.h"
 
-#ifdef __OHOS__
-
-#include <hilog/log.h>
-
-#include "SDL_mutex.h"
 #include "SDL_ohos.h"
-#include "SDL_stdinc.h"
 
 #include <napi/native_api.h>
 
-#include "../../video/ohos/SDL_ohoswindow.h"
+#include "SDL_system.h"
+#include "SDL_main.h"
+#include "SDL_mutex.h"
 
-static SDL_mutex *s_locale_mutex = NULL;
-static char s_locale_lang[4] = { 0 };
-static char s_locale_region[4] = { 0 };
+#define OHOS_ARGS_REQUIRED   1
+#define OHOS_ARGS_MAX        4
+#define OHOS_ARG_ABILITY     0
+#define OHOS_ARG_APP_LIBRARY 1
 
-static const char *Napi_StatusStr(napi_status status)
+static napi_ref g_ohos_ability_ref =      NULL;
+static napi_ref g_ohos_window_stage_ref = NULL;
+
+static napi_threadsafe_function g_ohos_window_request_tsf = NULL;
+
+typedef enum
 {
-    switch (status) {
-    case napi_invalid_arg:
-        return "napi_invalid_arg";
-    case napi_pending_exception:
-        return "napi_pending_exception";
-    case napi_generic_failure:
-        return "napi_generic_failure";
-    default:
-        return "napi_other_error";
-    }
+    OHOS_WINDOW_CMD_CREATE,
+    OHOS_WINDOW_CMD_DESTROY,
+    OHOS_WINDOW_CMD_SET_SIZE,
+    OHOS_WINDOW_CMD_SET_TITLE,
+    OHOS_WINDOW_CMD_SET_FULLSCREEN,
+    OHOS_WINDOW_CMD_SHOW
+} OHOS_WindowCommand;
+
+typedef struct OHOS_WindowRequest
+{
+    OHOS_WindowCommand cmd;
+} OHOS_WindowRequest;
+
+int OHOS_Window_Create(Uint32 sdl_window_id, int *width, int *height)
+{
 }
 
-napi_value Napi_CreateString(napi_env env, const char *data)
+void OHOS_Window_Destroy(Uint32 sdl_window_id)
 {
-    napi_value result;
-    napi_status status;
-    if ((status = napi_create_string_utf8(env, data, NAPI_AUTO_LENGTH, &result)) != napi_ok) {
-        Napi_ThrowError(env, status, "Napi_CreateString: create string failed");
-        return NULL;
-    }
-    return result;
+    
 }
 
-napi_value Napi_CreateNumber(napi_env env, double data)
-{
-    napi_value result;
-    napi_status status;
-    if ((status = napi_create_double(env, data, &result)) != napi_ok) {
-        Napi_ThrowError(env, status, "Napi_CreateNumber: create number failed");
-        return NULL;
-    }
-    return result;
-}
+/* UIAbility Lifecycle Callbacks */
 
-napi_value Napi_CreateBoolean(napi_env env, SDL_bool data)
+static napi_value OHOS_JS_UIAbility_OnDestroy(napi_env env, napi_callback_info info)
 {
-    napi_value result;
-    napi_status status;
-    if ((status = napi_get_boolean(env, (data == SDL_TRUE) ? true : false, &result)) != napi_ok) {
-        Napi_ThrowError(env, status, "Napi_CreateBoolean: create boolean failed");
-        return NULL;
-    }
-    return result;
-}
+    napi_value retval = NULL;
 
-napi_value Napi_CreateObj(napi_env env)
-{
-    napi_value result;
-    napi_status status;
-    if ((status = napi_create_object(env, &result)) != napi_ok) {
-        Napi_ThrowError(env, status, "Napi_CreateObj: create object failed");
-        return NULL;
-    }
-    return result;
-}
-
-napi_value Napi_CreateNull(napi_env env)
-{
-    napi_value result;
-    napi_status status;
-    if ((status = napi_get_null(env, &result)) != napi_ok) {
-        Napi_ThrowError(env, status, "Napi_CreateNull: create null failed");
-        return NULL;
-    }
-    return result;
-}
-
-napi_value Napi_CreateUndefined(napi_env env)
-{
-    napi_value result;
-    napi_status status;
-    if ((status = napi_get_undefined(env, &result)) != napi_ok) {
-        Napi_ThrowError(env, status, "Napi_CreateUndefined: create undefined failed");
-        return NULL;
-    }
-    return result;
-}
-
-int Napi_SetNamedProperty(napi_env env, napi_value obj, const char *name, napi_value data)
-{
-    napi_status status;
-    int retval = 0;
-    if (!data) {
-        Napi_ThrowError(env, napi_invalid_arg, "Napi_SetNamedProperty: invalid data");
-        retval = SDL_SetError("Napi_SetNamedProperty: invalid data");
-        goto endfunc;
-    }
-    if ((status = napi_set_named_property(env, obj, name, data)) != napi_ok) {
-        Napi_ThrowError(env, status, "Napi_SetNamedProperty: set named property failed");
-        retval = SDL_SetError("Napi_SetNamedProperty: set named property failed");
-        goto endfunc;
-    }
-endfunc:
+    napi_delete_reference(env, g_ohos_ability_ref);
+    g_ohos_ability_ref = NULL;
+    napi_get_undefined(env, &retval);
     return retval;
 }
 
-int Napi_CheckTSFCallbackArg(napi_env env, napi_callback_info info, napi_value *cb)
+static napi_value OHOS_JS_UIAbility_OnWillForeground(napi_env env, napi_callback_info info)
 {
+    napi_value retval = NULL;
+
+    SDL_OnApplicationWillEnterForeground();
+    napi_get_undefined(env, &retval);
+    return retval;
+}
+
+static napi_value OHOS_JS_UIAbility_OnDidForeground(napi_env env, napi_callback_info info)
+{
+    napi_value retval = NULL;
+
+    SDL_OnApplicationDidBecomeActive();
+    napi_get_undefined(env, &retval);
+    return retval;
+}
+
+static napi_value OHOS_JS_UIAbility_OnWillBackground(napi_env env, napi_callback_info info)
+{
+    napi_value retval = NULL;
+
+    SDL_OnApplicationWillResignActive();
+    napi_get_undefined(env, &retval);
+    return retval;
+}
+
+static napi_value OHOS_JS_UIAbility_OnDidBackground(napi_env env, napi_callback_info info)
+{
+    napi_value retval = NULL;
+
+    SDL_OnApplicationDidEnterBackground();
+    napi_get_undefined(env, &retval);
+    return retval;
+}
+
+static napi_value OHOS_JS_UIAbility_OnWindowStageCreate(napi_env env, napi_callback_info info)
+{
+    napi_value retval = NULL;
     size_t argc = 1;
-    napi_valuetype type = napi_undefined;
-    napi_status status;
-    int retval = 0;
+    napi_value argv[1] = {NULL};
 
-    *cb = NULL;
-    if ((status = napi_get_cb_info(env, info, &argc, cb, NULL, NULL)) != napi_ok) {
-        Napi_ThrowError(env, status, "Napi_GetCallbackArg: get_cb_info failed");
-        retval = SDL_SetError("Napi_GetCallbackArg: get_cb_info failed");
-        goto endfunc;
+    napi_get_cb_info(env, info, &argc, argv, NULL, NULL);
+    if (g_ohos_window_stage_ref) {
+        napi_delete_reference(env, g_ohos_window_stage_ref);
+        g_ohos_window_stage_ref = NULL;
     }
-    if (*cb == NULL) {
-        Napi_ThrowError(env, napi_invalid_arg, "Napi_GetCallbackArg: missing callback argument");
-        retval = SDL_SetError("Napi_GetCallbackArg: missing callback argument");
-        goto endfunc;
-    }
-    if ((status = napi_typeof(env, *cb, &type)) != napi_ok) {
-        Napi_ThrowError(env, status, "Napi_GetCallbackArg: typeof failed");
-        retval = SDL_SetError("Napi_GetCallbackArg: typeof failed");
-        goto endfunc;
-    }
-    if (type != napi_function) {
-        Napi_ThrowError(env, napi_invalid_arg, "Napi_GetCallbackArg: argument is not a function");
-        retval = SDL_SetError("Napi_GetCallbackArg: argument is not a function");
-        goto endfunc;
-    }
+    napi_create_reference(env, argv[0], 1, &g_ohos_window_stage_ref);
 
-endfunc:
+    /* The window request channel must exist before SDL_main can ask for a window. */
+    OHOS_WindowEntry_Init(env);
+
+    OHOS_Main_StartApp();
+
+    napi_get_undefined(env, &retval);
     return retval;
 }
 
-static void Napi_FinalizeTSF(napi_env env, void *finalize_data, void *hint)
+static napi_value OHOS_JS_UIAbility_OnWindowStageWillDestroy(napi_env env, napi_callback_info info)
 {
-    napi_threadsafe_function *tsf = (napi_threadsafe_function *)finalize_data;
-    (void)env;
-    (void)hint;
-    if (tsf != NULL) {
-        *tsf = NULL;
-    }
-}
+    napi_value retval = NULL;
 
-int Napi_CreateTSF(napi_env env, napi_value cb, const char *name, napi_threadsafe_function_call_js js_cb, napi_threadsafe_function *tsf)
-{
-    napi_value resource_name = NULL;
-    napi_status status;
-    int retval = 0;
-
-    if (*tsf != NULL) {
-        status = napi_release_threadsafe_function(*tsf, napi_tsfn_release);
-        if (status != napi_ok) {
-            Napi_ThrowError(env, status, "Napi_CreateTSF: release tsf failed");
-            retval = SDL_SetError("Napi_CreateTSF: release tsf failed");
-            goto endfunc;
-        }
-        *tsf = NULL;
-    }
-
-    resource_name = Napi_CreateString(env, name);
-    if (resource_name == NULL) {
-        retval = SDL_SetError("Napi_CreateString: create string failed");
-        goto endfunc;
-    }
-
-    status = napi_create_threadsafe_function(env, cb, NULL, resource_name, 0, 1, tsf, Napi_FinalizeTSF, NULL, js_cb, tsf);
-    if (status != napi_ok) {
-        Napi_ThrowError(env, status, "Napi_CreateTSF: create tsf failed");
-        retval = SDL_SetError("Napi_CreateTSF: create tsf failed");
-        goto endfunc;
-    }
-
-endfunc:
+    SDL_OnApplicationWillTerminate();
+    napi_get_undefined(env, &retval);
     return retval;
 }
 
-int Napi_CallFunction(napi_env env, napi_value func, size_t argc, const napi_value *argv)
+static napi_value OHOS_JS_UIAbility_OnWindowStageDestroy(napi_env env, napi_callback_info info)
 {
-    napi_value undefined = NULL;
-    napi_status status;
-    int retval = 0;
+    napi_value retval = NULL;
 
-    if (func == NULL || (argc > 0 && argv == NULL)) {
-        Napi_ThrowError(env, napi_invalid_arg, "Napi_CallTSF: func or argv invalid");
-        retval = SDL_SetError("Napi_CallTSF: func or argv invalid");
-        goto endfunc;
+    if (g_ohos_window_stage_ref) {
+        napi_delete_reference(env, g_ohos_window_stage_ref);
+        g_ohos_window_stage_ref = NULL;
     }
-
-    undefined = Napi_CreateUndefined(env);
-    if (undefined == NULL) {
-        retval = SDL_SetError("Napi_CreateUndefined: create undefined failed");
-        goto endfunc;
-    }
-
-    status = napi_call_function(env, undefined, func, argc, argv, NULL);
-    if (status != napi_ok) {
-        Napi_ThrowError(env, status, "Napi_CallFunction: call js function failed");
-        retval = SDL_SetError("Napi_CallFunction: call js function failed");
-        goto endfunc;
-    }
-
-endfunc:
+    napi_get_undefined(env, &retval);
     return retval;
 }
 
-int Napi_CallThreadSafeFunction(napi_threadsafe_function tsf, void *data)
+static napi_value OHOS_JS_UIAbility_OnMemoryLevel(napi_env env, napi_callback_info info)
 {
-    napi_status status;
-    int retval = 0;
+    napi_value retval = NULL;
+    size_t argc = 1;
+    napi_value argv[1] = { NULL };
+    int32_t memory_level = 0;
 
-    if (tsf == NULL) {
-        retval = SDL_SetError("Napi_CallThreadSafeFunction: tsf has not been initialized");
-        goto endfunc;
+    napi_get_cb_info(env, info, &argc, argv, NULL, NULL);
+    napi_get_value_int32(env, argv[0], &memory_level);
+    if (memory_level == 2) {
+        SDL_OnApplicationDidReceiveMemoryWarning();
     }
-    if (data == NULL) {
-        retval = SDL_SetError("Napi_CallThreadSafeFunction: data is NULL");
-        goto endfunc;
-    }
-
-    status = napi_call_threadsafe_function(tsf, data, napi_tsfn_nonblocking);
-    if (status != napi_ok) {
-        retval = SDL_SetError("Napi_CallThreadSafeFunction: call failed with (%s, status %d)", Napi_StatusStr(status), (Sint32)status);
-        goto endfunc;
-    }
-
-endfunc:
+    napi_get_undefined(env, &retval);
     return retval;
 }
 
-void Napi_ClearPending(napi_env env, const char *context)
+static void TakeOverUIAbility(napi_env env, napi_value ability)
 {
-    napi_value exc = NULL;
-    napi_value msg_val = NULL;
-    char msg[256] = "unknow js error";
-    size_t len = 0;
+    napi_value proto = NULL;
+    napi_value fn = NULL;
 
-    if (napi_get_and_clear_last_exception(env, &exc) != napi_ok || exc == NULL) {
-        return;
-    }
-
-    if (napi_get_named_property(env, exc, "message", &msg_val) == napi_ok && msg_val != NULL) {
-        napi_get_value_string_utf8(env, msg_val, msg, sizeof(msg), &len);
-    }
-
-    SDL_LogError(SDL_LOG_CATEGORY_VIDEO, "%s: %s", context, msg);
+    napi_get_prototype(env, ability, &proto);
+    napi_create_function(env, "onDestroy",                NAPI_AUTO_LENGTH, OHOS_JS_UIAbility_OnDestroy,                NULL, &fn);
+    napi_set_named_property(env, proto, "onDestroy",                fn);
+    napi_create_function(env, "onWillForeground",         NAPI_AUTO_LENGTH, OHOS_JS_UIAbility_OnWillForeground,         NULL, &fn);
+    napi_set_named_property(env, proto, "onWillForeground",         fn);
+    napi_create_function(env, "onDidForeground",          NAPI_AUTO_LENGTH, OHOS_JS_UIAbility_OnDidForeground,          NULL, &fn);
+    napi_set_named_property(env, proto, "onDidForeground",          fn);
+    napi_create_function(env, "onWillBackground",         NAPI_AUTO_LENGTH, OHOS_JS_UIAbility_OnWillBackground,         NULL, &fn);
+    napi_set_named_property(env, proto, "onWillBackground",         fn);
+    napi_create_function(env, "onDidBackground",          NAPI_AUTO_LENGTH, OHOS_JS_UIAbility_OnDidBackground,          NULL, &fn);
+    napi_set_named_property(env, proto, "onDidBackground",          fn);
+    napi_create_function(env, "onWindowStageCreate",      NAPI_AUTO_LENGTH, OHOS_JS_UIAbility_OnWindowStageCreate,      NULL, &fn);
+    napi_set_named_property(env, proto, "onWindowStageCreate",      fn);
+    napi_create_function(env, "onWindowStageWillDestroy", NAPI_AUTO_LENGTH, OHOS_JS_UIAbility_OnWindowStageWillDestroy, NULL, &fn);
+    napi_set_named_property(env, proto, "onWindowStageWillDestroy", fn);
+    napi_create_function(env, "onWindowStageDestroy",     NAPI_AUTO_LENGTH, OHOS_JS_UIAbility_OnWindowStageDestroy,     NULL, &fn);
+    napi_set_named_property(env, proto, "onWindowStageDestroy",     fn);
+    napi_create_function(env, "onMemoryLevel",            NAPI_AUTO_LENGTH, OHOS_JS_UIAbility_OnMemoryLevel,            NULL, &fn);
+    napi_set_named_property(env, proto, "onMemoryLevel",            fn);
 }
 
-void Napi_ThrowError(napi_env env, napi_status status, const char *data)
+/* Register related interfaces and bind UIAbility lifecycle callback functions. */
+
+static napi_value OHOS_Napi_ProvideArkTSObjects(napi_env env, napi_callback_info info)
 {
-    if (status == napi_pending_exception) {
-        return;
-    }
-    napi_throw_error(env, Napi_StatusStr(status), data);
-}
+    size_t argc =  OHOS_ARGS_MAX;
+    napi_value argv[OHOS_ARGS_MAX] = {NULL};
+    napi_value retval = NULL;
 
-int Napi_GetUint32(napi_env env, napi_value value, Uint32 *result)
-{
-    napi_status status;
-    napi_valuetype type = napi_undefined;
-    int retval = 0;
-
-    if (value == NULL || result == NULL) {
-        Napi_ThrowError(env, napi_invalid_arg, "Napi_GetUint32: value or result is NULL");
-        retval = SDL_SetError("Napi_GetUint32: value or result is NULL");
-        goto endfunc;
-    }
-
-    if ((status = napi_typeof(env, value, &type)) != napi_ok) {
-        Napi_ThrowError(env, status, "Napi_GetUint32: typeof failed");
-        retval = SDL_SetError("Napi_GetUint32: typeof failed (%s, status %d)",
-                              Napi_StatusStr(status), (int)status);
-        goto endfunc;
-    }
-    if (type != napi_number) {
-        Napi_ThrowError(env, napi_invalid_arg, "Napi_GetUint32: value is not a number");
-        retval = SDL_SetError("Napi_GetUint32: value is not a number");
-        goto endfunc;
-    }
-
-    if ((status = napi_get_value_uint32(env, value, result)) != napi_ok) {
-        Napi_ThrowError(env, status, "Napi_GetUint32: get_value_uint32 failed");
-        retval = SDL_SetError("Napi_GetUint32: get_value_uint32 failed (%s, status %d)",
-                              Napi_StatusStr(status), (int)status);
-        goto endfunc;
-    }
-
-endfunc:
-    return retval;
-}
-
-int Napi_GetString(napi_env env, napi_value value, char *buf, size_t buflen)
-{
-    napi_status status;
-    napi_valuetype type = napi_undefined;
-    size_t str_len = 0;
-    int retval = 0;
-
-    if (value == NULL || buf == NULL || buflen == 0) {
-        Napi_ThrowError(env, napi_invalid_arg, "Napi_GetString: value, buf or buflen is invalid");
-        retval = SDL_SetError("Napi_GetString: value, buf or buflen is invalid");
-        goto endfunc;
-    }
-
-    if ((status = napi_typeof(env, value, &type)) != napi_ok) {
-        Napi_ThrowError(env, status, "Napi_GetString: typeof failed");
-        retval = SDL_SetError("Napi_GetString: typeof failed (%s, status %d)",
-                              Napi_StatusStr(status), (int)status);
-        goto endfunc;
-    }
-    if (type != napi_string) {
-        Napi_ThrowError(env, napi_invalid_arg, "Napi_GetString: value is not a string");
-        retval = SDL_SetError("Napi_GetString: value is not a string");
-        goto endfunc;
-    }
-
-    if ((status = napi_get_value_string_utf8(env, value, NULL, 0, &str_len)) != napi_ok) {
-        Napi_ThrowError(env, status, "Napi_GetString: query length failed");
-        retval = SDL_SetError("Napi_GetString: query length failed (%s, status %d)",
-                              Napi_StatusStr(status), (int)status);
-        goto endfunc;
-    }
-
-    if (str_len + 1 > buflen) {
-        Napi_ThrowError(env, napi_invalid_arg, "Napi_GetString: buffer too small");
-        retval = SDL_SetError("Napi_GetString: buffer too small (need %zu, got %zu)",
-                              str_len + 1, buflen);
-        goto endfunc;
-    }
-
-    if ((status = napi_get_value_string_utf8(env, value, buf, buflen, &str_len)) != napi_ok) {
-        Napi_ThrowError(env, status, "Napi_GetString: copy failed");
-        retval = SDL_SetError("Napi_GetString: copy failed (%s, status %d)",
-                              Napi_StatusStr(status), (int)status);
-        goto endfunc;
-    }
-
-endfunc:
-    return retval;
-}
-
-static napi_value OHOS_Napi_UpdateLocale(napi_env env, napi_callback_info info)
-{
-    size_t argc = 2;
-    napi_value args[2] = { NULL };
-    char lang[4] = { 0 };
-    char region[4] = { 0 };
-    size_t len = 0;
-
-    napi_get_cb_info(env, info, &argc, args, NULL, NULL);
-    if (argc < 2) {
+    napi_get_cb_info(env, info, &argc, argv, NULL, NULL);
+    if(argc < OHOS_ARGS_REQUIRED){
+        napi_throw_type_error(env, NULL, "invalid params");
         return NULL;
     }
 
-    napi_get_value_string_utf8(env, args[0], lang, sizeof(lang), &len);
-    napi_get_value_string_utf8(env, args[1], region, sizeof(region), &len);
-
-    if (!lang[0]) {
-        return Napi_CreateUndefined(env);
+    if(g_ohos_ability_ref){
+        napi_delete_reference(env, g_ohos_ability_ref);
+        g_ohos_ability_ref = NULL;
     }
-    if (!s_locale_mutex) {
-        s_locale_mutex = SDL_CreateMutex();
+    napi_create_reference(env, argv[OHOS_ARG_ABILITY], 1, &g_ohos_ability_ref);
+    TakeOverUIAbility(env, argv[OHOS_ARG_ABILITY]);
+    if (argc > OHOS_ARG_APP_LIBRARY) {
+        size_t length = 0;
+        char buffer[256];
+        if (napi_get_value_string_utf8(env, argv[OHOS_ARG_APP_LIBRARY], buffer, sizeof(buffer), &length)==napi_ok) {
+            OHOS_Main_SetAppLibrary(buffer);
+        }
     }
 
-    SDL_LockMutex(s_locale_mutex);
-
-    SDL_strlcpy(s_locale_lang, lang, sizeof(s_locale_lang));
-    SDL_strlcpy(s_locale_region, region, sizeof(s_locale_region));
-
-    SDL_UnlockMutex(s_locale_mutex);
-    return Napi_CreateUndefined(env);
+    napi_get_undefined(env, &retval);
+    return retval;
 }
 
-static napi_value OHOS_Napi_RegisterInterface(napi_env env, napi_value exports)
+static napi_value OHOS_Napi_InitModule(napi_env env, napi_value exports)
 {
     napi_property_descriptor desc[] = {
-        { "registerWindowRequestCallback", NULL, OHOS_WindowRequest_RegisterCallback, NULL, NULL, NULL, napi_default, NULL },
-        { "attachWindowSurface", NULL, OHOS_Napi_AttachWindowSurface, NULL, NULL, NULL, napi_default, NULL },
-        { "detachWindowSurface", NULL, OHOS_Napi_DetachWindowSurface, NULL, NULL, NULL, napi_default, NULL },
-        { "notifyWindowReady", NULL, OHOS_Napi_NotifyWindowReady, NULL, NULL, NULL, napi_default, NULL },
-        { "notifyWindowDestroyed", NULL, OHOS_Napi_NotifyWindowDestroyed, NULL, NULL, NULL, napi_default, NULL },
-        { "notifyWindowEvent", NULL, OHOS_Napi_NotifyWindowEvent, NULL, NULL, NULL, napi_default, NULL },
-        { "notifyWindowStatusChange", NULL, OHOS_Napi_NotifyWindowStatusChange, NULL, NULL, NULL, napi_default, NULL },
-        { "notifyWindowStatusDidChange", NULL, OHOS_Napi_NotifyWindowStatusDidChange, NULL, NULL, NULL, napi_default, NULL },
-        { "notifyWindowSizeChange", NULL, OHOS_Napi_NotifyWindowSizeChange, NULL, NULL, NULL, napi_default, NULL },
-        { "notifyWindowRectChange", NULL, OHOS_Napi_NotifyWindowRectChange, NULL, NULL, NULL, napi_default, NULL },
-        { "notifyWindowVisibilityChange", NULL, OHOS_Napi_NotifyWindowVisibilityChange, NULL, NULL, NULL, napi_default, NULL },
-        { "notifyWindowAvoidAreaChange", NULL, OHOS_Napi_NotifyWindowAvoidAreaChange, NULL, NULL, NULL, napi_default, NULL },
-        { "notifyWindowSystemAvoidAreaChange", NULL, OHOS_Napi_NotifyWindowSystemAvoidAreaChange, NULL, NULL, NULL, napi_default, NULL },
-        { "notifyWindowKeyboardHeightChange", NULL, OHOS_Napi_NotifyWindowKeyboardHeightChange, NULL, NULL, NULL, napi_default, NULL },
-        { "notifyWindowKeyboardWillShow", NULL, OHOS_Napi_NotifyWindowKeyboardWillShow, NULL, NULL, NULL, napi_default, NULL },
-        { "notifyWindowKeyboardDidShow", NULL, OHOS_Napi_NotifyWindowKeyboardDidShow, NULL, NULL, NULL, napi_default, NULL },
-        { "notifyWindowKeyboardWillHide", NULL, OHOS_Napi_NotifyWindowKeyboardWillHide, NULL, NULL, NULL, napi_default, NULL },
-        { "notifyWindowKeyboardDidHide", NULL, OHOS_Napi_NotifyWindowKeyboardDidHide, NULL, NULL, NULL, napi_default, NULL },
-        { "notifyWindowTouchOutside", NULL, OHOS_Napi_NotifyWindowTouchOutside, NULL, NULL, NULL, napi_default, NULL },
-        { "notifyWindowDisplayIdChange", NULL, OHOS_Napi_NotifyWindowDisplayIdChange, NULL, NULL, NULL, napi_default, NULL },
-        { "notifyWindowSystemDensityChange", NULL, OHOS_Napi_NotifyWindowSystemDensityChange, NULL, NULL, NULL, napi_default, NULL },
-        { "notifyWindowNoInteractionDetected", NULL, OHOS_Napi_NotifyWindowNoInteractionDetected, NULL, NULL, NULL, napi_default, NULL },
-        { "notifyWindowScreenshot", NULL, OHOS_Napi_NotifyWindowScreenshot, NULL, NULL, NULL, napi_default, NULL },
-        { "notifyWindowScreenshotAppEvent", NULL, OHOS_Napi_NotifyWindowScreenshotAppEvent, NULL, NULL, NULL, napi_default, NULL },
-        { "notifyWindowDialogTargetTouch", NULL, OHOS_Napi_NotifyWindowDialogTargetTouch, NULL, NULL, NULL, napi_default, NULL },
-        { "notifyWindowHighlightChange", NULL, OHOS_Napi_NotifyWindowHighlightChange, NULL, NULL, NULL, napi_default, NULL },
-        { "notifyWindowTitleButtonRectChange", NULL, OHOS_Napi_NotifyWindowTitleButtonRectChange, NULL, NULL, NULL, napi_default, NULL },
-        { "notifyWindowFreeWindowModeChange", NULL, OHOS_Napi_NotifyWindowFreeWindowModeChange, NULL, NULL, NULL, napi_default, NULL },
-        { "notifyWindowOcclusionStateChange", NULL, OHOS_Napi_NotifyWindowOcclusionStateChange, NULL, NULL, NULL, napi_default, NULL },
-        { "notifyWindowFrameMetricsMeasured", NULL, OHOS_Napi_NotifyWindowFrameMetricsMeasured, NULL, NULL, NULL, napi_default, NULL },
-        { "notifyWindowRotationChange", NULL, OHOS_Napi_NotifyWindowRotationChange, NULL, NULL, NULL, napi_default, NULL },
-        { "notifyWindowWillClose", NULL, OHOS_Napi_NotifyWindowWillClose, NULL, NULL, NULL, napi_default, NULL },
-        { "notifyWindowSubWindowClose", NULL, OHOS_Napi_NotifyWindowSubWindowClose, NULL, NULL, NULL, napi_default, NULL },
+        {"provideArkTSObjects", NULL, OHOS_Napi_ProvideArkTSObjects, NULL, NULL, NULL, napi_default, NULL},
     };
+    napi_define_properties(env, exports, sizeof(desc)/sizeof(desc[0]), desc);
 
-    napi_define_properties(env, exports, SDL_arraysize(desc), desc);
     return exports;
 }
 
+static napi_module g_ohos_napi_module = {
+    .nm_version = 1,
+    .nm_flags = 0,
+    .nm_filename = NULL,
+    .nm_register_func = OHOS_Napi_InitModule,
+    .nm_modname = "SDL2",
+    .nm_priv = NULL,
+    .reserved = {0}
+};
+
 __attribute__((constructor)) void OHOS_Napi_RegisterModule(void)
 {
-    static napi_module ohos_napi_module = {
-        .nm_version = 1,
-        .nm_flags = 0,
-        .nm_filename = NULL,
-        .nm_register_func = OHOS_Napi_RegisterInterface,
-        .nm_modname = "sdl2",
-        .nm_priv = ((void *)0),
-        .reserved = { 0 },
-    };
-    napi_module_register(&ohos_napi_module);
+    napi_module_register(&g_ohos_napi_module);
 }
-
-#endif
 
 /* vi: set ts=4 sw=4 expandtab: */

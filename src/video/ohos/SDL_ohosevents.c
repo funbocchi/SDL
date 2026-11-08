@@ -32,6 +32,8 @@
 
 #include "SDL_ohosvideo.h"
 #include "SDL_ohoswindow.h"
+#include "SDL_ohoskeyboard.h"
+#include "SDL_ohosmouse.h"
 #ifdef SDL_VIDEO_OPENGL_EGL
 #include "SDL_ohosgles.h"
 #endif
@@ -61,11 +63,23 @@ void OHOS_PumpEvents(_THIS)
     }
 
     while (SDL_PeepEvents(&event, 1, SDL_GETEVENT, g_ohos_event_base, g_ohos_event_base + OHOS_EVENT_COUNT - 1) > 0) {
+        SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO,
+                     "OHOS_PumpEvents: base=%u type=%u code=%u window=%u",
+                     g_ohos_event_base, event.type, event.user.code, event.user.windowID);
         switch (event.type - g_ohos_event_base) {
         case OHOS_EVENT_WINDOW:
             OHOS_Window_HandleEvents(_this, &event);
             break;
         case OHOS_EVENT_GL:
+#ifdef SDL_VIDEO_OPENGL_EGL
+            OHOS_GL_HandleEvents(_this, &event);
+#endif
+            break;
+        case OHOS_EVENT_MOUSE:
+            OHOS_Mouse_HandleEvent(_this, &event);
+            break;
+        case OHOS_EVENT_KEYBOARD:
+            OHOS_Keyboard_HandleEvent(_this, &event);
             break;
         }
     }

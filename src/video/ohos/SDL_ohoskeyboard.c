@@ -26,18 +26,11 @@
 
 #include <arkui/native_key_event.h>
 
-#include "../../events/SDL_events_c.h"
 #include "../../events/scancodes_ohos.h"
+#include "../../events/SDL_events_c.h"
 #include "SDL_ohosevents.h"
 #include "SDL_ohoswindow.h"
 
-/* The table itself lives in src/events/scancodes_ohos.h, next to the other
-   platform scancode tables. */
-SDL_COMPILE_TIME_ASSERT(OHOS_keycodes_keypad_size,
-                        SDL_arraysize(ohos_keypad_scancode_table) ==
-                            OHOS_KEYCODE_KEYPAD_MAX - OHOS_KEYCODE_KEYPAD_BASE + 1);
-
-/* The key codes below 2000 are sparse, so they are handled by a switch. */
 static SDL_Scancode OHOS_KeyboardTool_KeyCodeToScancode(int32_t key_code){
     if (key_code >= OHOS_KEYCODE_KEYPAD_BASE && key_code <= OHOS_KEYCODE_KEYPAD_MAX) {
         return ohos_keypad_scancode_table[key_code - OHOS_KEYCODE_KEYPAD_BASE];
@@ -64,14 +57,11 @@ static SDL_Scancode OHOS_KeyboardTool_KeyCodeToScancode(int32_t key_code){
     }
 }
 
-/* ArkUI key event type to SDL key state; -1 means "do not forward". */
 static int OHOS_KeyboardTool_KeyEventTypeToState(ArkUI_KeyEventType key_event_type)
 {
     switch (key_event_type) {
     case ARKUI_KEY_EVENT_DOWN:
-        return SDL_PRESSED;
     case ARKUI_KEY_EVENT_LONG_PRESS:
-        /* Auto-repeat: SDL sets the repeat flag itself when the key is held. */
         return SDL_PRESSED;
     case ARKUI_KEY_EVENT_UP:
         return SDL_RELEASED;
@@ -82,42 +72,25 @@ static int OHOS_KeyboardTool_KeyEventTypeToState(ArkUI_KeyEventType key_event_ty
     }
 }
 
-/*
- * Runs on the ArkUI (UI) thread.
- *
- * SDL's keyboard state is not thread safe, so nothing here may call into
- * SDL_SendKeyboardKey*(); the event is packed into a user event and validated
- * on the SDL thread in OHOS_Keyboard_HandleEvent() instead.
- *
- * ArkUI_UIInputEvent is owned by the framework and is only valid for the
- * duration of this callback, so the fields needed are copied out here.
- */
 static void OHOS_Keyboard_HandleKeyEvent(ArkUI_NodeEvent *event)
 {
     ArkUI_UIInputEvent *input_event;
-    ArkUI_KeyEventType key_event_type;
+    ArkUI_KeyEventType event_type;
+    ArkUI_KeySourceType source_type;
     int32_t key_code;
     int state;
     Uint32 id;
     SDL_Event sdl_event;
 
-    if (g_ohos_event_base == (Uint32)-1) {
-        return;
-    }
-
     input_event = OH_ArkUI_NodeEvent_GetInputEvent(event);
     if (input_event == NULL) {
         return;
     }
-    if (OH_ArkUI_UIInputEvent_GetType(input_event) != ARKUI_UIINPUTEVENT_TYPE_KEY) {
-        return;
-    }
-    if (OH_ArkUI_KeyEvent_GetKeySource(input_event) != ARKUI_KEY_SOURCE_TYPE_KEYBOARD) {
-        return;
-    }
+    OH_ArkUI_UIInputEvent_GetType(input_event);
+    source_type = OH_ArkUI_KeyEvent_GetKeySource(input_event);
 
-    key_event_type = OH_ArkUI_KeyEvent_GetType(input_event);
-    state = OHOS_KeyboardTool_KeyEventTypeToState(key_event_type);
+    event_type = OH_ArkUI_KeyEvent_GetType(input_event);
+    state = OHOS_KeyboardTool_KeyEventTypeToState(event_type);
     if (state < 0) {
         return;
     }
@@ -135,55 +108,36 @@ static void OHOS_Keyboard_HandleKeyEvent(ArkUI_NodeEvent *event)
     SDL_zero(sdl_event);
     sdl_event.type = g_ohos_event_base + OHOS_EVENT_KEYBOARD;
     sdl_event.user.windowID = id;
-    sdl_event.user.code = state;
+    sdl_event.user.code = (Sint32)source_type;
     sdl_event.user.data1 = (void *)(intptr_t)key_code;
+    sdl_event.user.data2  = (void *)(intptr_t)state;
 
     SDL_PushEvent(&sdl_event);
 }
 
-void OHOS_Keyboard_RegisterEvent(ArkUI_NodeHandle handle, int32_t id)
-{
+void OHOS_Keyboard_RegisterEvent(ArkUI_NodeHandle handle, int32_t id){
     int32_t result;
-
-    result = OH_ArkUI_NativeModule_RegisterCommonEvent(handle, NODE_ON_KEY_EVENT,
-                                                      (void *)(intptr_t)id,
-                                                      OHOS_Keyboard_HandleKeyEvent);
-    if (result != ARKUI_ERROR_CODE_NO_ERROR) {
-        SDL_LogError(SDL_LOG_CATEGORY_VIDEO,
-                     "OHOS_Keyboard_RegisterEvent: registering key event failed (%d)",
-                     (int)result);
-    }
+    
+    result = OH_ArkUI_NativeModule_RegisterCommonEvent(handle, NODE_ON_KEY_EVENT, (void *)(intptr_t)id, OHOS_Keyboard_HandleKeyEvent);
+    if (result != ARKUI_ERROR_CODE_NO_ERROR)
+    SDL_LogError(SDL_LOG_CATEGORY_VIDEO, "key register failed %d", (int)result);
 }
 
-/*
- * Runs on the SDL thread, dispatched from OHOS_PumpEvents().
- *
- * The event is only accepted when the window it was reported for still exists,
- * is not being destroyed, and is the window SDL currently gives keyboard focus
- * to. SDL attributes key events to the focus window, so accepting an event from
- * any other window would report it against the wrong one.
- */
-void OHOS_Keyboard_HandleEvent(SDL_VideoDevice *_this, const SDL_Event *event)
-{
-    SDL_Window *window;
+void OHOS_Keyboard_HandleEvent(SDL_VideoDevice *_this, const SDL_Event *event){
     SDL_Scancode scancode;
+    int state;
 
-    (void)_this;
+    scancode = (SDL_Scancode)(intptr_t)event->user.data1;
+    state = (int)(intptr_t)event->user.data2;
+    SDL_SendKeyboardKey(state, scancode);
+    SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "OHOS key: window=%u scancode=%d(%s) state=%s", event->user.windowID, (int)scancode, SDL_GetScancodeName(scancode), (state == SDL_PRESSED) ? "down" : "up");
+}
 
-    window = SDL_GetWindowFromID(event->user.windowID);
-    if (window == NULL || window->is_destroying) {
-        return;
-    }
-    if (SDL_GetKeyboardFocus() != window) {
-        return;
-    }
+/* SDL hooks */
 
-    scancode = OHOS_KeyboardTool_KeyCodeToScancode((int32_t)(intptr_t)event->user.data1);
-    if (scancode == SDL_SCANCODE_UNKNOWN) {
-        return;
-    }
-
-    SDL_SendKeyboardKeyAndKeycode((Uint8)event->user.code, scancode, SDLK_UNKNOWN);
+SDL_bool OHOS_HasScreenKeyboardSupport(SDL_VideoDevice *_this){
+    /* TODO: 待完成逻辑验证后补充 */
+    return SDL_FALSE;
 }
 
 #endif /* SDL_VIDEO_DRIVER_OHOS */

@@ -28,6 +28,8 @@
 #include <unistd.h>
 #include <window_manager/oh_display_manager.h>
 
+#include "SDL_hints.h"
+
 #include "../../core/ohos/SDL_ohos.h"
 #ifdef SDL_VIDEO_OPENGL_EGL
 #include "SDL_ohosgles.h"
@@ -210,6 +212,7 @@ static int OHOS_VideoInit(_THIS)
 
         SDL_AddDisplayMode(&_this->displays[_this->num_displays - 1], &mode);
     }
+    SDL_SetHint(SDL_HINT_VIDEO_HIGHDPI_DISABLED, "1");
 
     OH_NativeDisplayManager_DestroyAllDisplays(all_displays);
     all_displays = NULL;
