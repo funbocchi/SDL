@@ -34,7 +34,12 @@ extern void OHOS_Main_StartApp(void);
 
 /* SDL_Window related operations */
 
-extern int OHOS_Window_Create(Uint32 sdl_window_id, int *width, int *height);
+extern int  OHOS_Window_Create   (Uint32 sdl_window_id, int width, int height);
+extern void OHOS_Window_Destroy  (Uint32 sdl_window_id);
+extern void OHOS_Window_SetSize  (Uint32 sdl_window_id, int width, int height);
+extern void OHOS_Window_SetPos   (Uint32 sdl_window_id, int pos_x, int pos_y);
+extern void OHOS_Window_SetTitle (Uint32 sdl_window_id, const char *title);
+extern void OHOS_Window_Show     (Uint32 sdl_window_id, SDL_bool is_shown);
 
 /* Ends C function definitions when using C++ */
 #ifdef __cplusplus
