@@ -50,13 +50,16 @@ void OHOS_Main_StartApp(void)
 {
     static SDL_bool started = SDL_FALSE;
     pthread_t thread;
+    int rc;
 
     if (started) {
         return;
     }
     started = SDL_TRUE;
 
-    if (pthread_create(&thread, NULL, OHOS_StartMainThread, NULL) == 0) {
+    rc = pthread_create(&thread, NULL, OHOS_StartMainThread, NULL);
+    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "OHOS_Main_StartApp: pthread_create=%d", rc);
+    if (rc == 0) {
         pthread_detach(thread);
     }
 }

@@ -25,15 +25,7 @@
 #define SDL_OHOSEVENTS_H
 
 #include "../SDL_sysvideo.h"
-
-typedef enum
-{
-    OHOS_EVENT_WINDOW,
-    OHOS_EVENT_GL,
-    OHOS_EVENT_MOUSE,
-    OHOS_EVENT_KEYBOARD,
-    OHOS_EVENT_COUNT
-} OHOSEventType;
+#include "../../core/ohos/SDL_ohos.h"
 
 /* Hook */
 

@@ -68,11 +68,11 @@ void OHOS_PumpEvents(_THIS)
                      g_ohos_event_base, event.type, event.user.code, event.user.windowID);
         switch (event.type - g_ohos_event_base) {
         case OHOS_EVENT_WINDOW:
-            OHOS_Window_HandleEvents(_this, &event);
+            OHOS_Window_HandleEvent(_this, &event);
             break;
         case OHOS_EVENT_GL:
 #ifdef SDL_VIDEO_OPENGL_EGL
-            OHOS_GL_HandleEvents(_this, &event);
+            OHOS_GL_HandleEvent(_this, &event);
 #endif
             break;
         case OHOS_EVENT_MOUSE:
