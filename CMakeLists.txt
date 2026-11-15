@@ -1821,7 +1821,7 @@ elseif(OHOS)
     list(APPEND SOURCE_FILES ${OHOS_SENSOR_SOURCES})
     list(APPEND EXTRA_LIBS ohsensor)
     set(HAVE_SDL_SENSORS TRUE)
-
+  endif()
   if(SDL_TIMERS)
     set(SDL_TIMER_UNIX 1)
     file(GLOB TIMER_SOURCES ${SDL2_SOURCE_DIR}/src/timer/unix/*.c)
