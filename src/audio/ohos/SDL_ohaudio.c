@@ -25,10 +25,12 @@
 #include <ohaudio/native_audio_manager.h>
 #include <ohaudio/native_audio_routing_manager.h>
 #include <ohaudio/native_audiostream_base.h>
+#include <ohaudio/native_audiostreambuilder.h>
+#include <accesstoken/ability_access_control.h>
 
 #include "../../core/ohos/SDL_ohos.h"
-#include "../SDL_audio_c.h"
 #include "SDL_audio.h"
+#include "../SDL_audio_c.h"
 #include "SDL_ohaudio.h"
 #include "SDL_stdinc.h"
 
@@ -201,8 +203,240 @@ static void OHAudio_DetectDevices(void)
     OHAudio_EnumerateDevicesByFlag(routing_manager, AUDIO_DEVICE_FLAG_INPUT, SDL_TRUE);
 }
 
+/* OHAudio calls this on its own audio thread, once per block it needs. */
+static OH_AudioData_Callback_Result OHAudio_OnWriteData(OH_AudioRenderer *renderer, void *userData,
+                                                        void *audioData, int32_t audioDataSize)
+{
+    SDL_AudioDevice *this = (SDL_AudioDevice *)userData;
+    struct SDL_PrivateAudioData *hidden;
+    int size;
+
+    (void)renderer;
+
+    if (this == NULL || this->hidden == NULL) {
+        SDL_memset(audioData, 0, audioDataSize);
+        return AUDIO_DATA_CALLBACK_RESULT_VALID;
+    }
+    hidden = this->hidden;
+
+    if (hidden->filled_blocks != NULL && SDL_SemWaitTimeout(hidden->filled_blocks, 0) == 0) {
+        size = SDL_min((int)audioDataSize, hidden->block_size);
+        SDL_memcpy(audioData, hidden->blocks[hidden->read_index], size);
+        if (size < (int)audioDataSize) {
+            SDL_memset((Uint8 *)audioData + size, 0, (size_t)(audioDataSize - size));
+        }
+        hidden->read_index = (hidden->read_index + 1) % OHOS_AUDIO_BLOCK_COUNT;
+        SDL_SemPost(hidden->free_blocks);
+    } else {
+        /* Underrun: keep the stream running with silence. */
+        SDL_memset(audioData, 0, audioDataSize);
+    }
+
+    return AUDIO_DATA_CALLBACK_RESULT_VALID;
+}
+
+static void OHAudio_OnReadData(OH_AudioCapturer *capturer, void *userData, void *audioData, int32_t audioDataSize)
+{
+    SDL_AudioDevice *this = (SDL_AudioDevice *)userData;
+    struct SDL_PrivateAudioData *hidden;
+    int size;
+
+    (void)capturer;
+
+    if (this == NULL || this->hidden == NULL) {
+        return;
+    }
+    hidden = this->hidden;
+
+    if (hidden->free_blocks == NULL || SDL_SemWaitTimeout(hidden->free_blocks, 0) != 0) {
+        return; /* No room, the sample is dropped. */
+    }
+
+    size = SDL_min((int)audioDataSize, hidden->block_size);
+    SDL_memcpy(hidden->blocks[hidden->write_index], audioData, size);
+    hidden->write_index = (hidden->write_index + 1) % OHOS_AUDIO_BLOCK_COUNT;
+    SDL_SemPost(hidden->filled_blocks);
+}
+
+static void OHAudio_OnRendererError(OH_AudioRenderer *renderer, void *userData, OH_AudioStream_Result error)
+{
+    SDL_AudioDevice *this = (SDL_AudioDevice *)userData;
+
+    (void)renderer;
+    (void)error;
+
+    if (this != NULL) {
+        SDL_OpenedAudioDeviceDisconnected(this);
+    }
+}
+
+static void OHAudio_OnCapturerError(OH_AudioCapturer *capturer, void *userData, OH_AudioStream_Result error)
+{
+    SDL_AudioDevice *this = (SDL_AudioDevice *)userData;
+
+    (void)capturer;
+    (void)error;
+
+    if (this != NULL) {
+        SDL_OpenedAudioDeviceDisconnected(this);
+    }
+}
+
+static void OHAudio_OnRendererInterrupt(OH_AudioRenderer *renderer, void *userData,
+                                        OH_AudioInterrupt_ForceType type, OH_AudioInterrupt_Hint hint)
+{
+    SDL_AudioDevice *this = (SDL_AudioDevice *)userData;
+
+    (void)renderer;
+    (void)type;
+
+    if (this == NULL) {
+        return;
+    }
+    /* Pause and stop both mean the stream no longer owns the output. */
+    if (hint == AUDIOSTREAM_INTERRUPT_HINT_PAUSE || hint == AUDIOSTREAM_INTERRUPT_HINT_STOP) {
+        SDL_OpenedAudioDeviceDisconnected(this);
+    }
+}
+
+static void OHAudio_OnCapturerInterrupt(OH_AudioCapturer *capturer, void *userData,
+                                        OH_AudioInterrupt_ForceType type, OH_AudioInterrupt_Hint hint)
+{
+    SDL_AudioDevice *this = (SDL_AudioDevice *)userData;
+
+    (void)capturer;
+    (void)type;
+
+    if (this == NULL) {
+        return;
+    }
+    if (hint == AUDIOSTREAM_INTERRUPT_HINT_PAUSE || hint == AUDIOSTREAM_INTERRUPT_HINT_STOP) {
+        SDL_OpenedAudioDeviceDisconnected(this);
+    }
+}
+
+static void OHAudio_FreeBlocks(struct SDL_PrivateAudioData *hidden)
+{
+    int i;
+
+    for (i = 0; i < OHOS_AUDIO_BLOCK_COUNT; ++i) {
+        if (hidden->blocks[i] != NULL) {
+            SDL_free(hidden->blocks[i]);
+            hidden->blocks[i] = NULL;
+        }
+    }
+    if (hidden->free_blocks != NULL) {
+        SDL_DestroySemaphore(hidden->free_blocks);
+        hidden->free_blocks = NULL;
+    }
+    if (hidden->filled_blocks != NULL) {
+        SDL_DestroySemaphore(hidden->filled_blocks);
+        hidden->filled_blocks = NULL;
+    }
+}
+
 static int OHAudio_OpenDevice(_THIS, const char *devname)
 {
+    OH_AudioStreamBuilder *builder = NULL;
+    OH_AudioStream_Result res;
+    OH_AudioStream_SampleFormat format = AUDIOSTREAM_SAMPLE_S16LE;
+    int32_t sample_frames = 0;
+    int32_t freq = 0;
+    int32_t channels = 0;
+    int i;
+
+    (void)devname;
+
+    /* Recording needs a runtime permission; opening fails so the caller can ask for it. */
+    if (this->iscapture && !OH_AT_CheckSelfPermission("ohos.permission.MICROPHONE")) {
+        return SDL_SetError("Microphone permission is not granted");
+    }
+
+    this->hidden = (struct SDL_PrivateAudioData *)SDL_calloc(1, sizeof(*this->hidden));
+    if (this->hidden == NULL) {
+        return SDL_OutOfMemory();
+    }
+
+    /* OHAudio has no notion of more than eight discrete channels. */
+    this->spec.channels = (Uint8)SDL_clamp(this->spec.channels, 1, 8);
+
+    res = OH_AudioStreamBuilder_Create(&builder, this->iscapture ? AUDIOSTREAM_TYPE_CAPTURER : AUDIOSTREAM_TYPE_RENDERER);
+    if (res != AUDIOSTREAM_SUCCESS || builder == NULL) {
+        return SDL_SetError("OH_AudioStreamBuilder_Create failed: %d", (int)res);
+    }
+
+    OH_AudioStreamBuilder_SetSampleFormat(builder, SDL2OHAudioFormat(this->spec.format));
+    OH_AudioStreamBuilder_SetSamplingRate(builder, this->spec.freq);
+    OH_AudioStreamBuilder_SetChannelCount(builder, this->spec.channels);
+    OH_AudioStreamBuilder_SetLatencyMode(builder, AUDIOSTREAM_LATENCY_MODE_FAST);
+
+    if (this->iscapture) {
+        /* CAMCORDER is the recording source, not the one used for phone calls. */
+        OH_AudioStreamBuilder_SetCapturerInfo(builder, AUDIOSTREAM_SOURCE_TYPE_CAMCORDER);
+        OH_AudioStreamBuilder_SetCapturerReadDataCallback(builder, OHAudio_OnReadData, this);
+        OH_AudioStreamBuilder_SetCapturerErrorCallback(builder, OHAudio_OnCapturerError, this);
+        OH_AudioStreamBuilder_SetCapturerInterruptCallback(builder, OHAudio_OnCapturerInterrupt, this);
+        res = OH_AudioStreamBuilder_GenerateCapturer(builder, &this->hidden->capturer);
+    } else {
+        OH_AudioStreamBuilder_SetRendererWriteDataCallback(builder, OHAudio_OnWriteData, this);
+        OH_AudioStreamBuilder_SetRendererErrorCallback(builder, OHAudio_OnRendererError, this);
+        OH_AudioStreamBuilder_SetRendererInterruptCallback(builder, OHAudio_OnRendererInterrupt, this);
+        res = OH_AudioStreamBuilder_GenerateRenderer(builder, &this->hidden->renderer);
+    }
+    OH_AudioStreamBuilder_Destroy(builder);
+
+    if (res != AUDIOSTREAM_SUCCESS) {
+        return SDL_SetError("Couldn't generate the OHAudio stream: %d", (int)res);
+    }
+
+    /* Query what the stream actually settled on, the request is only a hint. */
+    if (this->iscapture) {
+        OH_AudioCapturer_GetFrameSizeInCallback(this->hidden->capturer, &sample_frames);
+        OH_AudioCapturer_GetSamplingRate(this->hidden->capturer, &freq);
+        OH_AudioCapturer_GetChannelCount(this->hidden->capturer, &channels);
+        OH_AudioCapturer_GetSampleFormat(this->hidden->capturer, &format);
+    } else {
+        OH_AudioRenderer_GetFrameSizeInCallback(this->hidden->renderer, &sample_frames);
+        OH_AudioRenderer_GetSamplingRate(this->hidden->renderer, &freq);
+        OH_AudioRenderer_GetChannelCount(this->hidden->renderer, &channels);
+        OH_AudioRenderer_GetSampleFormat(this->hidden->renderer, &format);
+    }
+
+    if (sample_frames <= 0 || freq <= 0 || channels <= 0) {
+        return SDL_SetError("OHAudio returned an unusable stream format");
+    }
+
+    /* SDL must mix in exactly the granularity OHAudio asks for. */
+    this->spec.samples = (Uint16)SDL_min(sample_frames, 0xFFFF);
+    this->spec.freq = (int)freq;
+    this->spec.channels = (Uint8)channels;
+    this->spec.format = OHAudioFormat2SDL(format);
+
+    this->hidden->block_size = (int)this->spec.samples * (SDL_AUDIO_BITSIZE(this->spec.format) / 8) * this->spec.channels;
+    if (this->hidden->block_size <= 0) {
+        return SDL_SetError("Invalid OHAudio block size");
+    }
+
+    for (i = 0; i < OHOS_AUDIO_BLOCK_COUNT; ++i) {
+        this->hidden->blocks[i] = (Uint8 *)SDL_calloc(1, this->hidden->block_size);
+        if (this->hidden->blocks[i] == NULL) {
+            return SDL_OutOfMemory();
+        }
+    }
+
+    this->hidden->free_blocks = SDL_CreateSemaphore(OHOS_AUDIO_BLOCK_COUNT);
+    this->hidden->filled_blocks = SDL_CreateSemaphore(0);
+    if (this->hidden->free_blocks == NULL || this->hidden->filled_blocks == NULL) {
+        return SDL_SetError("Couldn't create the OHAudio block semaphores");
+    }
+
+    res = this->iscapture ? OH_AudioCapturer_Start(this->hidden->capturer)
+                          : OH_AudioRenderer_Start(this->hidden->renderer);
+    if (res != AUDIOSTREAM_SUCCESS) {
+        return SDL_SetError("Couldn't start the OHAudio stream: %d", (int)res);
+    }
+
+    return 0;
 }
 
 static void OHAudio_ThreadInit(_THIS)
@@ -215,26 +449,95 @@ static void OHAudio_ThreadDeInit(_THIS)
 
 static void OHAudio_WaitDevice(_THIS)
 {
+    if (this->hidden != NULL && this->hidden->free_blocks != NULL) {
+        SDL_SemWait(this->hidden->free_blocks);
+    }
 }
 
 static void OHAudio_PlayDevice(_THIS)
 {
+    struct SDL_PrivateAudioData *hidden = this->hidden;
+
+    if (hidden == NULL || hidden->filled_blocks == NULL) {
+        return;
+    }
+
+    /* GetDeviceBuf() handed out the write block, so it is full now. */
+    hidden->write_index = (hidden->write_index + 1) % OHOS_AUDIO_BLOCK_COUNT;
+    SDL_SemPost(hidden->filled_blocks);
 }
 
 static Uint8 *OHAudio_GetDeviceBuf(_THIS)
 {
+    struct SDL_PrivateAudioData *hidden = this->hidden;
+
+    if (hidden == NULL || hidden->blocks[hidden->write_index] == NULL) {
+        return NULL;
+    }
+    return hidden->blocks[hidden->write_index];
 }
 
 static int OHAudio_CaptureFromDevice(_THIS, void *buffer, int buflen)
 {
+    struct SDL_PrivateAudioData *hidden = this->hidden;
+    int size;
+
+    if (hidden == NULL || hidden->filled_blocks == NULL) {
+        SDL_memset(buffer, 0, buflen);
+        return buflen;
+    }
+
+    if (SDL_SemWaitTimeout(hidden->filled_blocks, 1000) != 0) {
+        SDL_memset(buffer, 0, buflen);
+        return buflen;
+    }
+
+    size = SDL_min(buflen, hidden->block_size);
+    SDL_memcpy(buffer, hidden->blocks[hidden->read_index], size);
+    if (size < buflen) {
+        SDL_memset((Uint8 *)buffer + size, 0, (size_t)(buflen - size));
+    }
+    hidden->read_index = (hidden->read_index + 1) % OHOS_AUDIO_BLOCK_COUNT;
+    SDL_SemPost(hidden->free_blocks);
+
+    return buflen;
 }
 
 static void OHAudio_FlushCapture(_THIS)
 {
+    struct SDL_PrivateAudioData *hidden = this->hidden;
+
+    if (hidden == NULL || hidden->filled_blocks == NULL) {
+        return;
+    }
+
+    while (SDL_SemTryWait(hidden->filled_blocks) == 0) {
+        hidden->read_index = (hidden->read_index + 1) % OHOS_AUDIO_BLOCK_COUNT;
+        SDL_SemPost(hidden->free_blocks);
+    }
 }
 
 static void OHAudio_CloseDevice(_THIS)
 {
+    if (this->hidden == NULL) {
+        return;
+    }
+
+    if (this->hidden->renderer != NULL) {
+        OH_AudioRenderer_Stop(this->hidden->renderer);
+        OH_AudioRenderer_Release(this->hidden->renderer);
+        this->hidden->renderer = NULL;
+    }
+    if (this->hidden->capturer != NULL) {
+        OH_AudioCapturer_Stop(this->hidden->capturer);
+        OH_AudioCapturer_Release(this->hidden->capturer);
+        this->hidden->capturer = NULL;
+    }
+
+    OHAudio_FreeBlocks(this->hidden);
+
+    SDL_free(this->hidden);
+    this->hidden = NULL;
 }
 
 static void OHAudio_LockDevice(_THIS)
@@ -255,6 +558,11 @@ static void OHAudio_Deinitialize(void)
 
 static int OHAudio_GetDefaultAudioInfo(char **name, SDL_AudioSpec *spec, int iscapture)
 {
+    (void)name;
+    (void)spec;
+    (void)iscapture;
+
+    return SDL_Unsupported();
 }
 
 /**

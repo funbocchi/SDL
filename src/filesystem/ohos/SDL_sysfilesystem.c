@@ -28,6 +28,7 @@
 #include "SDL_stdinc.h"
 
 #include <errno.h>
+#include <string.h>
 #include <sys/stat.h>
 
 #include <AbilityKit/ability_runtime/application_context.h>
@@ -96,7 +97,7 @@ char *SDL_GetPrefPath(const char *org, const char *app)
     }
 
     if (mkdir(retval, 0755) != 0 && errno != EEXIST) {
-        SDL_SetError("Couldn't create directory '%s': %s", retval, SDL_strerror(errno));
+        SDL_SetError("Couldn't create directory '%s': %s", retval, strerror(errno));
         SDL_free(retval);
         return NULL;
     }

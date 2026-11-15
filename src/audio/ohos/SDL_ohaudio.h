@@ -29,10 +29,23 @@
 /* Hidden "this" pointer for the audio functions */
 #define _THIS SDL_AudioDevice *this
 
+/* One block per callback; the count is the playout depth. */
+#define OHOS_AUDIO_BLOCK_COUNT 4
+
 struct SDL_PrivateAudioData
 {
     OH_AudioRenderer *renderer;
     OH_AudioCapturer *capturer;
+
+    /* OHAudio pushes through a callback while SDL pulls, so a block ring
+       bridges the two, one block per callback request. */
+    Uint8   *blocks[OHOS_AUDIO_BLOCK_COUNT];
+    int      block_size;
+    int      write_index;
+    int      read_index;
+
+    SDL_sem *free_blocks;
+    SDL_sem *filled_blocks;
 } SDL_PrivateAudioData;
 
 #endif
