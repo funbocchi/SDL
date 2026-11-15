@@ -43,24 +43,28 @@ typedef struct OHOS_GLContextEntry
 
 static OHOS_GLContextEntry *g_ohos_gl_context_entries = NULL;
 
-static int OHOS_GLContext_Create(_THIS, SDL_GLContext context)
+static OHOS_GLContextEntry *OHOS_GLContext_Alloc(_THIS)
 {
     OHOS_GLContextEntry *entry = NULL;
 
     entry = (OHOS_GLContextEntry *)SDL_calloc(1, sizeof(*entry));
     if (entry == NULL) {
-        return SDL_OutOfMemory();
+        SDL_OutOfMemory();
+        return NULL;
     }
     entry->pbuffer = SDL_EGL_CreateOffscreenSurface(_this, OHOS_GL_OFFSCREEN_WIDTH, OHOS_GL_OFFSCREEN_HEIGHT);
     if (entry->pbuffer == EGL_NO_SURFACE) {
         SDL_free(entry);
-        return -1;
+        return NULL;
     }
+    return entry;
+}
+
+static void OHOS_GLContext_Link(OHOS_GLContextEntry *entry, SDL_GLContext context)
+{
     entry->context = context;
     entry->next = g_ohos_gl_context_entries;
     g_ohos_gl_context_entries = entry;
-
-    return 0;
 }
 
 static EGLSurface OHOS_GLContext_GetPbuffer(SDL_GLContext context)
@@ -105,6 +109,16 @@ static void OHOS_GL_HandleSurfaceCreated(_THIS, const SDL_Event *event)
         return;
     }
     data->egl_surface = SDL_EGL_CreateSurface(_this, (NativeWindowType)event->user.data1);
+    SDL_Log("OHOS surface created: window=%u native=%p egl=%p", event->user.windowID,
+            event->user.data1, (void *)data->egl_surface);
+
+    /* The context usually exists by now and is current with the pbuffer, so move it
+     * over to the real surface right away instead of waiting for a resize. */
+    if (data->egl_surface != EGL_NO_SURFACE && SDL_GL_GetCurrentWindow() == window) {
+        if (SDL_EGL_MakeCurrent(_this, data->egl_surface, SDL_GL_GetCurrentContext()) == 0) {
+            data->using_pbuffer = SDL_FALSE;
+        }
+    }
 }
 
 static void OHOS_GL_HandleSurfaceChanged(_THIS, const SDL_Event *event)
@@ -236,15 +250,22 @@ int OHOS_GL_MakeCurrent(_THIS, SDL_Window *window, SDL_GLContext context)
 SDL_GLContext OHOS_GL_CreateContext(_THIS, SDL_Window *window)
 {
     SDL_GLContext context = NULL;
+    OHOS_GLContextEntry *entry = NULL;
 
-    context = SDL_EGL_CreateContext(_this, EGL_NO_SURFACE);
+    /* SDL_EGL_CreateContext makes the context current and probes GL extensions
+     * right away, and a context without a surface reports none of them, so the
+     * pbuffer has to exist before the context does. */
+    entry = OHOS_GLContext_Alloc(_this);
+    if (entry == NULL) {
+        return NULL;
+    }
+    context = SDL_EGL_CreateContext(_this, entry->pbuffer);
     if (context == NULL) {
+        SDL_EGL_DestroySurface(_this, entry->pbuffer);
+        SDL_free(entry);
         return NULL;
     }
-    if (OHOS_GLContext_Create(_this, context) < 0) {
-        SDL_EGL_DeleteContext(_this, context);
-        return NULL;
-    }
+    OHOS_GLContext_Link(entry, context);
     if (OHOS_GL_MakeCurrent(_this, window, context) < 0) {
         OHOS_GLContext_Destroy(_this, context);
         SDL_EGL_DeleteContext(_this, context);
@@ -281,8 +302,14 @@ int OHOS_GL_SwapWindow(_THIS, SDL_Window *window)
 {
     SDL_WindowData *data = (SDL_WindowData *)window->driverdata;
 
-    if (data->using_pbuffer) {
+    if (data->egl_surface == EGL_NO_SURFACE) {
+        /* Nothing to present to yet: keep running against the pbuffer. */
+        SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "OHOS swap without a window surface");
         return 0;
+    }
+    if (data->using_pbuffer) {
+        data->using_pbuffer = SDL_FALSE;
+        SDL_EGL_MakeCurrent(_this, data->egl_surface, SDL_GL_GetCurrentContext());
     }
     return SDL_EGL_SwapBuffers(_this, data->egl_surface);
 }

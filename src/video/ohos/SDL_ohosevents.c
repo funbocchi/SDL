@@ -34,6 +34,7 @@
 #include "SDL_ohoswindow.h"
 #include "SDL_ohoskeyboard.h"
 #include "SDL_ohosmouse.h"
+#include "SDL_ohostouch.h"
 #ifdef SDL_VIDEO_OPENGL_EGL
 #include "SDL_ohosgles.h"
 #endif
@@ -80,6 +81,9 @@ void OHOS_PumpEvents(_THIS)
             break;
         case OHOS_EVENT_KEYBOARD:
             OHOS_Keyboard_HandleEvent(_this, &event);
+            break;
+        case OHOS_EVENT_TOUCH:
+            OHOS_Touch_HandleEvent(_this, &event);
             break;
         }
     }
