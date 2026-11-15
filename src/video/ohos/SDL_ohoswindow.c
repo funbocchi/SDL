@@ -45,6 +45,12 @@ int OHOS_CreateWindow(_THIS, SDL_Window *window)
         return SDL_OutOfMemory();
     }
     window->driverdata = (void *)data;
+
+    /* The real drawable size only arrives once the ArkUI surface reports back, but
+     * renderers query it during creation, so start from the window size. */
+    data->drawable_width = window->w;
+    data->drawable_height = window->h;
+
     return OHOS_Window_Create(window->id,
                               (window->flags & SDL_WINDOW_BORDERLESS) ? SDL_FALSE : SDL_TRUE,
                               window->w, window->h, window->x, window->y,

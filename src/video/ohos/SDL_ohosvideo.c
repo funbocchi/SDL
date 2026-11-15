@@ -87,18 +87,6 @@ static SDL_DisplayOrientation OHOS_Tool_OrientationToSDL(NativeDisplayManager_Or
     }
 }
 
-float OHOS_DisplayTool_GetDensityPixels(SDL_Window *window)
-{
-    SDL_VideoDisplay *display;
-    float retval = 1.0f;
-
-    display = SDL_GetDisplayForWindow(window);
-    if (display) {
-        retval = ((SDL_DisplayData *)display->driverdata)->density_pixels;
-    }
-    return retval;
-}
-
 static int OHOS_GetDisplayBounds(_THIS, SDL_VideoDisplay *display, SDL_Rect *rect)
 {
     SDL_DisplayData *data;
@@ -280,11 +268,6 @@ static int OHOS_GetDisplayDPI(_THIS, SDL_VideoDisplay *display, float *ddpi, flo
     if (!data) {
         return SDL_SetError("OHOS_GetDisplayDPI: no driverdata");
     }
-
-    SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO,
-                 "OHOS display: mode=%dx%d x_dpi=%.2f y_dpi=%.2f density_pixels=%.2f scaled_density=%.2f",
-                 display->desktop_mode.w, display->desktop_mode.h,
-                 data->x_dpi, data->y_dpi, data->density_pixels, data->scaled_density);
 
     if (hdpi) {
         *hdpi = data->x_dpi;
