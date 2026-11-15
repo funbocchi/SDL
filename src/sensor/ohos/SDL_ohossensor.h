@@ -20,9 +20,21 @@
 */
 #include "SDL_config.h"
 
+#ifndef SDL_OHOSSENSOR_H
+#define SDL_OHOSSENSOR_H
+
+#include <sensors/oh_sensor.h>
+#include <sensors/oh_sensor_type.h>
+
 /* The private structure used to keep track of a sensor */
 struct sensor_hwdata
 {
+    Sensor_SubscriptionId        *id;
+    Sensor_SubscriptionAttribute *attribute;
+    Sensor_Subscriber            *subscriber;
+    Sensor_Type                   type;
 };
+
+#endif /* SDL_OHOSSENSOR_H */
 
 /* vi: set ts=4 sw=4 expandtab: */

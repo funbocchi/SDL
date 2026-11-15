@@ -27,11 +27,14 @@
 #include <arkui/native_key_event.h>
 
 #include "../../events/scancodes_ohos.h"
-#include "../../events/SDL_events_c.h"
-#include "SDL_ohosevents.h"
-#include "SDL_ohoswindow.h"
+#include "../../events/SDL_keyboard_c.h"
 
-static SDL_Scancode OHOS_KeyboardTool_KeyCodeToScancode(int32_t key_code){
+#include "../../core/ohos/SDL_ohos.h"
+
+/* The ArkUI key codes inherit Android's numbering, so the table is indexed by
+   (key_code - OHOS_KEYCODE_KEYPAD_BASE) over the 2000..2122 range. */
+static SDL_Scancode OHOS_KeyboardTool_KeyCodeToScancode(int32_t key_code)
+{
     if (key_code >= OHOS_KEYCODE_KEYPAD_BASE && key_code <= OHOS_KEYCODE_KEYPAD_MAX) {
         return ohos_keypad_scancode_table[key_code - OHOS_KEYCODE_KEYPAD_BASE];
     }
@@ -51,92 +54,85 @@ static SDL_Scancode OHOS_KeyboardTool_KeyCodeToScancode(int32_t key_code){
         return SDL_SCANCODE_BRIGHTNESSUP;
     case ARKUI_KEYCODE_BRIGHTNESS_DOWN:
         return SDL_SCANCODE_BRIGHTNESSDOWN;
-    /* ARKUI_KEYCODE_FN and ARKUI_KEYCODE_CAMERA have no SDL equivalent. */
     default:
         return SDL_SCANCODE_UNKNOWN;
     }
 }
 
-static int OHOS_KeyboardTool_KeyEventTypeToState(ArkUI_KeyEventType key_event_type)
+static void OHOS_Keyboard_HandleKey(_THIS, const SDL_Event *event)
 {
-    switch (key_event_type) {
-    case ARKUI_KEY_EVENT_DOWN:
-    case ARKUI_KEY_EVENT_LONG_PRESS:
-        return SDL_PRESSED;
-    case ARKUI_KEY_EVENT_UP:
-        return SDL_RELEASED;
-    case ARKUI_KEY_EVENT_CLICK:
-    case ARKUI_KEY_EVENT_UNKNOWN:
-    default:
-        return -1;
-    }
-}
-
-static void OHOS_Keyboard_HandleKeyEvent(ArkUI_NodeEvent *event)
-{
-    ArkUI_UIInputEvent *input_event;
-    ArkUI_KeyEventType event_type;
-    ArkUI_KeySourceType source_type;
-    int32_t key_code;
-    int state;
-    Uint32 id;
-    SDL_Event sdl_event;
-
-    input_event = OH_ArkUI_NodeEvent_GetInputEvent(event);
-    if (input_event == NULL) {
-        return;
-    }
-    OH_ArkUI_UIInputEvent_GetType(input_event);
-    source_type = OH_ArkUI_KeyEvent_GetKeySource(input_event);
-
-    event_type = OH_ArkUI_KeyEvent_GetType(input_event);
-    state = OHOS_KeyboardTool_KeyEventTypeToState(event_type);
-    if (state < 0) {
-        return;
-    }
-
-    key_code = OH_ArkUI_KeyEvent_GetKeyCode(input_event);
-    if (key_code == ARKUI_KEYCODE_UNKNOWN) {
-        return;
-    }
-
-    id = (Uint32)(intptr_t)OH_ArkUI_NodeEvent_GetUserData(event);
-    if (id == 0) {
-        return;
-    }
-
-    SDL_zero(sdl_event);
-    sdl_event.type = g_ohos_event_base + OHOS_EVENT_KEYBOARD;
-    sdl_event.user.windowID = id;
-    sdl_event.user.code = (Sint32)source_type;
-    sdl_event.user.data1 = (void *)(intptr_t)key_code;
-    sdl_event.user.data2  = (void *)(intptr_t)state;
-
-    SDL_PushEvent(&sdl_event);
-}
-
-void OHOS_Keyboard_RegisterEvent(ArkUI_NodeHandle handle, int32_t id){
-    int32_t result;
-    
-    result = OH_ArkUI_NativeModule_RegisterCommonEvent(handle, NODE_ON_KEY_EVENT, (void *)(intptr_t)id, OHOS_Keyboard_HandleKeyEvent);
-    if (result != ARKUI_ERROR_CODE_NO_ERROR)
-    SDL_LogError(SDL_LOG_CATEGORY_VIDEO, "key register failed %d", (int)result);
-}
-
-void OHOS_Keyboard_HandleEvent(SDL_VideoDevice *_this, const SDL_Event *event){
     SDL_Scancode scancode;
-    int state;
+    int32_t key_code;
+    Uint8 state;
 
-    scancode = (SDL_Scancode)(intptr_t)event->user.data1;
-    state = (int)(intptr_t)event->user.data2;
+    (void)_this;
+
+    key_code = (int32_t)(intptr_t)event->user.data1;
+    scancode = OHOS_KeyboardTool_KeyCodeToScancode(key_code);
+    if (scancode == SDL_SCANCODE_UNKNOWN) {
+        return;
+    }
+
+    state = ((intptr_t)event->user.data2 == ARKUI_KEY_EVENT_UP) ? SDL_RELEASED : SDL_PRESSED;
+
     SDL_SendKeyboardKey(state, scancode);
-    SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "OHOS key: window=%u scancode=%d(%s) state=%s", event->user.windowID, (int)scancode, SDL_GetScancodeName(scancode), (state == SDL_PRESSED) ? "down" : "up");
 }
 
-/* SDL hooks */
+void OHOS_Keyboard_HandleEvent(_THIS, const SDL_Event *event)
+{
+    if (event == NULL) {
+        return;
+    }
 
-SDL_bool OHOS_HasScreenKeyboardSupport(SDL_VideoDevice *_this){
-    /* TODO: 待完成逻辑验证后补充 */
+    switch (event->user.code) {
+    case OHOS_KEYBOARD_EVENT_KEY:
+        OHOS_Keyboard_HandleKey(_this, event);
+        break;
+    default:
+        break;
+    }
+}
+
+void OHOS_StartTextInput(_THIS)
+{
+    (void)_this;
+}
+
+void OHOS_StopTextInput(_THIS)
+{
+    (void)_this;
+}
+
+void OHOS_SetTextInputRect(_THIS, const SDL_Rect *rect)
+{
+    (void)_this;
+    (void)rect;
+}
+
+SDL_bool OHOS_HasScreenKeyboardSupport(_THIS)
+{
+    (void)_this;
+
+    return SDL_FALSE;
+}
+
+void OHOS_ShowScreenKeyboard(_THIS, SDL_Window *window)
+{
+    (void)_this;
+    (void)window;
+}
+
+void OHOS_HideScreenKeyboard(_THIS, SDL_Window *window)
+{
+    (void)_this;
+    (void)window;
+}
+
+SDL_bool OHOS_IsScreenKeyboardShown(_THIS, SDL_Window *window)
+{
+    (void)_this;
+    (void)window;
+
     return SDL_FALSE;
 }
 

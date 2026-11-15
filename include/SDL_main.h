@@ -51,6 +51,18 @@
 */
 #define SDL_MAIN_NEEDED
 
+#elif defined(__OHOS__)
+/* On OpenHarmony the application is a shared library with no process entry
+   point of its own. The ArkTS UIAbility hands control to libSDL2.so, which
+   then runs the application's main function on a separate thread.
+
+   See src/main/ohos/SDL_ohos_main.c for details.
+ */
+#define SDL_MAIN_NEEDED
+
+/* We need to export SDL_main so it can be launched from Java */
+#define SDLMAIN_DECLSPEC    DECLSPEC
+
 #elif defined(__GDK__)
 /* On GDK, SDL provides a main function that initializes the game runtime.
 

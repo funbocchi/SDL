@@ -38,6 +38,7 @@ typedef struct
 {
     int        drawable_width;   /* drawable size reported by SURFACE_CHANGED */
     int        drawable_height;
+    int32_t    ohos_window_id;   /* OHOS window id, 0 until ID_ASSIGNED arrives */
 
 #ifdef SDL_VIDEO_OPENGL_EGL
     EGLSurface egl_pbuffer;      /* out-of-window rendering target */
@@ -83,6 +84,8 @@ extern int   OHOS_UpdateWindowFramebuffer  (_THIS, SDL_Window *window, const SDL
 extern void  OHOS_DestroyWindowFramebuffer (_THIS, SDL_Window *window);
 extern void  OHOS_OnWindowEnter            (_THIS, SDL_Window *window);
 extern int   OHOS_FlashWindow              (_THIS, SDL_Window *window, SDL_FlashOperation operation);
+
+extern void  OHOS_Window_HandleEvent       (_THIS, const SDL_Event *event);
 
 #endif /* SDL_OHOSWINDOW_H */
 

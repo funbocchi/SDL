@@ -27,6 +27,7 @@
 #include "SDL_filesystem.h"
 #include "SDL_stdinc.h"
 
+#include <errno.h>
 #include <sys/stat.h>
 
 #include <AbilityKit/ability_runtime/application_context.h>
@@ -41,6 +42,10 @@ char *SDL_GetBasePath(void)
     rc = OH_AbilityRuntime_ApplicationContextGetBundleCodeDir(buffer, (int32_t)sizeof(buffer), &writelen);
     if (rc != ABILITY_RUNTIME_ERROR_CODE_NO_ERROR) {
         SDL_SetError("OH_AbilityRuntime_ApplicationContextGetBundleCodeDir failed: %d", (int)rc);
+        return NULL;
+    }
+    if (writelen >= (int32_t)sizeof(buffer)) {
+        SDL_SetError("The bundle code directory path does not fit in the buffer");
         return NULL;
     }
 
@@ -59,20 +64,42 @@ char *SDL_GetPrefPath(const char *org, const char *app)
     char buffer[1024];
     int32_t writelen = 0;
     AbilityRuntime_ErrorCode rc;
-    char *retval;
+    char *retval = NULL;
+
+    if (!app) {
+        SDL_InvalidParamError("app");
+        return NULL;
+    }
+    if (!org) {
+        org = "";
+    }
 
     rc = OH_AbilityRuntime_ApplicationContextGetFilesDir(buffer, (int32_t)sizeof(buffer), &writelen);
     if (rc != ABILITY_RUNTIME_ERROR_CODE_NO_ERROR) {
         SDL_SetError("OH_AbilityRuntime_ApplicationContextGetFilesDir failed: %d", (int)rc);
         return NULL;
     }
+    if (writelen >= (int32_t)sizeof(buffer)) {
+        SDL_SetError("The files directory path does not fit in the buffer");
+        return NULL;
+    }
 
-    if (SDL_asprintf(&retval, "%s/%s/", buffer, app) < 0) {
+    /* The files directory already exists; only the application one is created. */
+    if (*org) {
+        SDL_asprintf(&retval, "%s/%s/%s/", buffer, org, app);
+    } else {
+        SDL_asprintf(&retval, "%s/%s/", buffer, app);
+    }
+    if (retval == NULL) {
         SDL_OutOfMemory();
         return NULL;
     }
-    mkdir(buffer, 0755);
-    mkdir(retval, 0755);
+
+    if (mkdir(retval, 0755) != 0 && errno != EEXIST) {
+        SDL_SetError("Couldn't create directory '%s': %s", retval, SDL_strerror(errno));
+        SDL_free(retval);
+        return NULL;
+    }
 
     return retval;
 }

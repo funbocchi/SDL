@@ -23,16 +23,19 @@
 #ifndef SDL_OHOSKEYBOARD_H
 #define SDL_OHOSKEYBOARD_H
 
-#include <arkui/common_type.h>
-
 #include "../SDL_sysvideo.h"
 #include "SDL_events.h"
 
-extern void OHOS_Keyboard_RegisterEvent(ArkUI_NodeHandle handle, int32_t id);
-
+/* Consumes the OHOS_EVENT_KEYBOARD user events on the SDL thread. */
 extern void OHOS_Keyboard_HandleEvent(_THIS, const SDL_Event *event);
 
-/* SDL Hooks */
+/* SDL_VideoDevice hooks */
+
+extern void OHOS_StartTextInput(_THIS);
+
+extern void OHOS_StopTextInput(_THIS);
+
+extern void OHOS_SetTextInputRect(_THIS, const SDL_Rect *rect);
 
 extern SDL_bool OHOS_HasScreenKeyboardSupport(_THIS);
 

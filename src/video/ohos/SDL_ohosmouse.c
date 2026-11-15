@@ -23,71 +23,212 @@
 #ifdef SDL_VIDEO_DRIVER_OHOS
 
 #include "SDL_ohosmouse.h"
-
-#include <multimedia/image_framework/image/pixelmap_native.h>
-#include <arkui/native_node.h>
-#include <arkui/ui_input_event.h>
-#include <arkui/native_type.h>
-
-#include "../../events/SDL_events_c.h"
-#include "SDL_ohosevents.h"
 #include "SDL_ohoswindow.h"
 
-/*
- * A mouse event has to carry the window, the device, the button or position and
- * the state together, which does not fit into the two data pointers of a SDL
- * user event, so the payload is heap allocated.
- *
- * Ownership: the producer frees the payload when SDL_PushEvent() rejects it,
- * and OHOS_Mouse_HandleEvent() frees it on every path it takes.
- */
-typedef enum
+#include "../../core/ohos/SDL_ohos.h"
+
+#include <multimedia/image_framework/image/pixelmap_native.h>
+#include <multimodalinput/oh_input_manager.h>
+#include <multimodalinput/oh_pointer_style.h>
+#include <arkui/ui_input_event.h>
+
+#include "../../events/SDL_mouse_c.h"
+
+/* Every cursor the application creates stands for one ArkUI pointer style. */
+typedef struct OHOS_CursorData
 {
-    OHOS_MOUSE_SUBTYPE_MOVE = 0,
-    OHOS_MOUSE_SUBTYPE_BUTTON,
-    OHOS_MOUSE_SUBTYPE_WHEEL, /* reserved: ArkUI reports the wheel as an axis event */
-    OHOS_MOUSE_SUBTYPE_RESET
-} OHOS_MouseSubtype;
+    int32_t style;                /* Input_PointerStyle, used when custom is NULL */
+    Input_CustomCursor *custom;   /* set for cursors created from a surface */
+} OHOS_CursorData;
 
-typedef struct OHOS_MousePayload
+static int32_t OHOS_MouseTool_PointerStyleFromSystemCursor(SDL_SystemCursor id)
 {
-    Uint32 window_id;
-    Sint32 subtype;
-    Sint32 mouse_id;
+    switch (id) {
+    case SDL_SYSTEM_CURSOR_ARROW:
+        return DEFAULT;
+    case SDL_SYSTEM_CURSOR_IBEAM:
+        return TEXT_CURSOR;
+    case SDL_SYSTEM_CURSOR_WAIT:
+    case SDL_SYSTEM_CURSOR_WAITARROW:
+        return LOADING;
+    case SDL_SYSTEM_CURSOR_CROSSHAIR:
+        return CROSS;
+    case SDL_SYSTEM_CURSOR_SIZENWSE:
+        return NORTH_WEST_SOUTH_EAST;
+    case SDL_SYSTEM_CURSOR_SIZENESW:
+        return NORTH_EAST_SOUTH_WEST;
+    case SDL_SYSTEM_CURSOR_SIZEWE:
+        return WEST_EAST;
+    case SDL_SYSTEM_CURSOR_SIZENS:
+        return NORTH_SOUTH;
+    case SDL_SYSTEM_CURSOR_SIZEALL:
+        return MOVE;
+    case SDL_SYSTEM_CURSOR_NO:
+        return CURSOR_FORBID;
+    case SDL_SYSTEM_CURSOR_HAND:
+        return HAND_POINTING;
+    default:
+        return DEFAULT;
+    }
+}
 
-    union
-    {
-        struct
-        {
-            Sint32 x, y;  /* window coordinates, in px */
-            float dx, dy; /* raw hardware delta, in device counts */
-        } move;
-        struct
-        {
-            Sint32 x, y; /* window coordinates, in px */
-            Sint32 button;
-            Sint32 state;
-        } button;
-        struct
-        {
-            float dx, dy;
-            Sint32 direction;
-        } wheel;
-    } u;
-} OHOS_MousePayload;
-
-/* Fractional part of the raw deltas that has not been reported yet.
-   Only touched from the SDL thread. */
-static float s_delta_accum_x = 0.0f;
-static float s_delta_accum_y = 0.0f;
-
-/*
- * ArkUI and SDL disagree on the button numbering: ArkUI has RIGHT = 2 and
- * MIDDLE = 3, while SDL has MIDDLE = 2 and RIGHT = 3, so this must never be
- * replaced by a plain cast.
- */
-static Sint32 OHOS_MouseTool_ButtonFromArkUI(int32_t arkui_button)
+SDL_Cursor *OHOS_CreateSystemCursor(SDL_SystemCursor id)
 {
+    SDL_Cursor *cursor;
+    OHOS_CursorData *data;
+
+    cursor = (SDL_Cursor *)SDL_calloc(1, sizeof(SDL_Cursor));
+    if (cursor == NULL) {
+        SDL_OutOfMemory();
+        return NULL;
+    }
+
+    data = (OHOS_CursorData *)SDL_calloc(1, sizeof(OHOS_CursorData));
+    if (data == NULL) {
+        SDL_free(cursor);
+        SDL_OutOfMemory();
+        return NULL;
+    }
+    data->style = OHOS_MouseTool_PointerStyleFromSystemCursor(id);
+
+    cursor->driverdata = data;
+    return cursor;
+}
+
+SDL_Cursor *OHOS_CreateCursor(SDL_Surface *surface, int hot_x, int hot_y)
+{
+    SDL_Cursor *cursor = NULL;
+    OHOS_CursorData *data = NULL;
+    OH_Pixelmap_InitializationOptions *options = NULL;
+    OH_PixelmapNative *pixelmap = NULL;
+    Input_CustomCursor *custom = NULL;
+    uint8_t *pixels = NULL;
+    size_t length;
+    int row;
+
+    if (surface == NULL) {
+        SDL_InvalidParamError("surface");
+        return NULL;
+    }
+    if (surface->format->format != SDL_PIXELFORMAT_ARGB8888) {
+        SDL_Unsupported();
+        return NULL;
+    }
+
+    /* The pixelmap expects tightly packed rows; SDL surfaces may pad them. */
+    length = (size_t)surface->w * (size_t)surface->h * 4;
+    pixels = (uint8_t *)SDL_malloc(length);
+    if (pixels == NULL) {
+        SDL_OutOfMemory();
+        return NULL;
+    }
+    for (row = 0; row < surface->h; ++row) {
+        SDL_memcpy(pixels + (size_t)row * (size_t)surface->w * 4,
+                   (uint8_t *)surface->pixels + (size_t)row * (size_t)surface->pitch,
+                   (size_t)surface->w * 4);
+    }
+
+    if (OH_PixelmapInitializationOptions_Create(&options) != IMAGE_SUCCESS) {
+        goto done;
+    }
+    OH_PixelmapInitializationOptions_SetWidth(options, surface->w);
+    OH_PixelmapInitializationOptions_SetHeight(options, surface->h);
+    OH_PixelmapInitializationOptions_SetPixelFormat(options, PIXEL_FORMAT_RGBA_8888);
+    OH_PixelmapInitializationOptions_SetAlphaType(options, PIXELMAP_ALPHA_TYPE_UNPREMULTIPLIED);
+
+    if (OH_PixelmapNative_CreatePixelmap(pixels, length, options, &pixelmap) != IMAGE_SUCCESS) {
+        goto done;
+    }
+
+    custom = OH_Input_CustomCursor_Create(pixelmap, hot_x, hot_y);
+    if (custom == NULL) {
+        goto done;
+    }
+
+    cursor = (SDL_Cursor *)SDL_calloc(1, sizeof(SDL_Cursor));
+    if (cursor == NULL) {
+        SDL_OutOfMemory();
+        goto done;
+    }
+
+    data = (OHOS_CursorData *)SDL_calloc(1, sizeof(OHOS_CursorData));
+    if (data == NULL) {
+        SDL_free(cursor);
+        cursor = NULL;
+        SDL_OutOfMemory();
+        goto done;
+    }
+    data->style = DEFAULT;
+    data->custom = custom;
+    custom = NULL;
+
+    cursor->driverdata = data;
+
+done:
+    if (options != NULL) {
+        OH_PixelmapInitializationOptions_Release(options);
+    }
+    if (pixelmap != NULL) {
+        OH_PixelmapNative_Release(pixelmap);
+    }
+    if (custom != NULL) {
+        OH_Input_CustomCursor_Destroy(&custom);
+    }
+    SDL_free(pixels);
+
+    return cursor;
+}
+
+int OHOS_ShowCursor(SDL_Cursor *cursor)
+{
+    SDL_Window *window;
+    SDL_WindowData *window_data;
+    OHOS_CursorData *cursor_data;
+    Input_CursorConfig *config;
+    Input_Result result;
+
+    if (cursor == NULL) {
+        result = OH_Input_SetPointerVisible(false);
+        if (result != INPUT_SUCCESS) {
+            return SDL_SetError("OH_Input_SetPointerVisible failed (%d)", (int)result);
+        }
+        return 0;
+    }
+
+    /* The window id is delivered asynchronously, so the style can only be applied
+       once it has arrived; the pointer is still shown without it. */
+    window = SDL_GetMouseFocus();
+    window_data = (window != NULL) ? (SDL_WindowData *)window->driverdata : NULL;
+    cursor_data = (OHOS_CursorData *)cursor->driverdata;
+
+    if (window_data != NULL && window_data->ohos_window_id != 0 && cursor_data != NULL) {
+        if (cursor_data->custom != NULL) {
+            config = OH_Input_CursorConfig_Create(SDL_TRUE);
+            result = OH_Input_SetCustomCursor(window_data->ohos_window_id, cursor_data->custom, config);
+            if (config != NULL) {
+                OH_Input_CursorConfig_Destroy(&config);
+            }
+        } else {
+            result = OH_Input_SetPointerStyle(window_data->ohos_window_id, cursor_data->style);
+        }
+
+        if (result != INPUT_SUCCESS) {
+            SDL_SetError("setting the pointer style failed (%d)", (int)result);
+        }
+    }
+
+    result = OH_Input_SetPointerVisible(true);
+    if (result != INPUT_SUCCESS) {
+        return SDL_SetError("OH_Input_SetPointerVisible failed (%d)", (int)result);
+    }
+
+    return 0;
+}
+
+/* ArkUI numbers the buttons LEFT, RIGHT, MIDDLE, BACK, FORWARD, while SDL has
+   MIDDLE and RIGHT the other way around, so this must never be a plain cast. */
+static Uint8 OHOS_MouseTool_ButtonFromArkUI(int32_t arkui_button)
+{   
     switch (arkui_button) {
     case UI_MOUSE_EVENT_BUTTON_LEFT:
         return SDL_BUTTON_LEFT;
@@ -104,202 +245,190 @@ static Sint32 OHOS_MouseTool_ButtonFromArkUI(int32_t arkui_button)
     }
 }
 
-/* Device ids are signed and may be negative or missing; SDL reserves
-   (Uint32)-1 for touch generated mouse events, so never map onto that. */
-static Sint32 OHOS_MouseTool_MouseIdFromArkUI(int32_t device_id)
+static void OHOS_Mouse_HandleMove(_THIS, const SDL_Event *event)
 {
-    return (device_id > 0) ? device_id : 0;
-}
-
-/*
- * Runs on the ArkUI (UI) thread.
- *
- * SDL's mouse state is not thread safe, so nothing here may call into
- * SDL_SendMouse*(); the event is packed and validated on the SDL thread in
- * OHOS_Mouse_HandleEvent() instead.
- *
- * ArkUI_UIInputEvent is owned by the framework and only valid for the duration
- * of this callback, so every field needed is copied out here.
- */
-static void OHOS_Mouse_HandleMouseEvent(ArkUI_NodeEvent *event)
-{
-    ArkUI_UIInputEvent *input_event;
-    OHOS_MousePayload *payload;
-    SDL_Event sdl_event;
-    int32_t action;
-    Uint32 window_id;
-
-    if (g_ohos_event_base == (Uint32)-1) {
-        return;
-    }
-
-    input_event = OH_ArkUI_NodeEvent_GetInputEvent(event);
-    if (input_event == NULL) {
-        return;
-    }
-SDL_LogError(SDL_LOG_CATEGORY_VIDEO,
-    "MOUSE cb: ev=%p type=%d userdata=%p action=%d",
-    (void *)input_event,
-    input_event ? (int)OH_ArkUI_UIInputEvent_GetType(input_event) : -1,
-    OH_ArkUI_NodeEvent_GetUserData(event),
-    input_event ? (int)OH_ArkUI_MouseEvent_GetMouseAction(input_event) : -1);
-    if (OH_ArkUI_UIInputEvent_GetType(input_event) != ARKUI_UIINPUTEVENT_TYPE_MOUSE) {
-        return;
-    }
-
-    window_id = (Uint32)(intptr_t)OH_ArkUI_NodeEvent_GetUserData(event);
-    if (window_id == 0) {
-        return;
-    }
-
-    action = OH_ArkUI_MouseEvent_GetMouseAction(input_event);
-
-    payload = (OHOS_MousePayload *)SDL_calloc(1, sizeof(*payload));
-    if (payload == NULL) {
-        SDL_OutOfMemory();
-        return;
-    }
-    payload->window_id = window_id;
-    payload->mouse_id = OHOS_MouseTool_MouseIdFromArkUI(OH_ArkUI_UIInputEvent_GetDeviceId(input_event));
-
-    switch (action) {
-    case UI_MOUSE_EVENT_ACTION_MOVE:
-        payload->subtype = OHOS_MOUSE_SUBTYPE_MOVE;
-        payload->u.move.x = (Sint32)SDL_lroundf(1.9*OH_ArkUI_PointerEvent_GetX(input_event));
-        payload->u.move.y = (Sint32)SDL_lroundf(1.9*OH_ArkUI_PointerEvent_GetY(input_event));
-         SDL_LogError(SDL_LOG_CATEGORY_VIDEO, "MOUSE raw x=%d y=%d",
-                     (int)payload->u.move.x, (int)payload->u.move.y);
-        /* The raw delta is the only relative value ArkUI provides, and it is
-           what relative mouse mode has to use: the absolute position stops
-           changing once the pointer is locked or reaches the window edge. */
-        payload->u.move.dx = OH_ArkUI_MouseEvent_GetRawDeltaX(input_event);
-        payload->u.move.dy = OH_ArkUI_MouseEvent_GetRawDeltaY(input_event);
-        break;
-
-    case UI_MOUSE_EVENT_ACTION_PRESS:
-    case UI_MOUSE_EVENT_ACTION_RELEASE:
-        payload->subtype = OHOS_MOUSE_SUBTYPE_BUTTON;
-        payload->u.button.x = (Sint32)SDL_lroundf(1.9*OH_ArkUI_PointerEvent_GetX(input_event));
-        payload->u.button.y = (Sint32)SDL_lroundf(1.9*OH_ArkUI_PointerEvent_GetY(input_event));
-        payload->u.button.button = OHOS_MouseTool_ButtonFromArkUI(OH_ArkUI_MouseEvent_GetMouseButton(input_event));
-        payload->u.button.state = (action == UI_MOUSE_EVENT_ACTION_PRESS) ? SDL_PRESSED : SDL_RELEASED;
-        if (payload->u.button.button == 0) {
-            /* UI_MOUSE_EVENT_BUTTON_NONE, or a button SDL does not model. */
-            SDL_free(payload);
-            return;
-        }
-        break;
-
-    case UI_MOUSE_EVENT_ACTION_CANCEL:
-        /* The gesture was cancelled: report whatever was pressed as released,
-           otherwise the button would stay down in SDL forever. */
-        payload->subtype = OHOS_MOUSE_SUBTYPE_RESET;
-        break;
-
-    default:
-        SDL_free(payload);
-        return;
-    }
-
-    SDL_zero(sdl_event);
-    sdl_event.type = g_ohos_event_base + OHOS_EVENT_MOUSE;
-    sdl_event.user.windowID = window_id;
-    sdl_event.user.data1 = payload;
-
-    if (SDL_PushEvent(&sdl_event) <= 0) {
-        SDL_free(payload);
-    }
-}
-
-/*
- * Runs on the SDL thread, dispatched from OHOS_PumpEvents().
- *
- * The event is only accepted when the window it was reported for still exists
- * and is not being destroyed. Mouse events are not gated on the keyboard focus,
- * because the pointer can hover any window and SDL tracks that separately
- * through SDL_SendMouseMotion().
- */
-void OHOS_Mouse_HandleEvent(SDL_VideoDevice *_this, const SDL_Event *event)
-{
-    OHOS_MousePayload *payload = (OHOS_MousePayload *)event->user.data1;
     SDL_Window *window;
-    SDL_MouseID mouse_id;
-    int x, y;
+    OHOS_FloatPair payload;
 
     (void)_this;
 
-    if (payload == NULL) {
+    window = SDL_GetWindowFromID(event->user.windowID);
+    if (window == NULL) {
         return;
     }
 
-    window = SDL_GetWindowFromID(payload->window_id);
-    if (window == NULL || window->is_destroying) {
-        SDL_free(payload);
+    if (SDL_GetRelativeMouseMode() == SDL_TRUE) {
+        /* The raw delta keeps changing once the pointer is locked or at the edge. */
+        payload.u = (Uint64)(intptr_t)event->user.data2;
+        SDL_SendMouseMotion(window, 0, 1,
+                            (int)SDL_lroundf(payload.f[0]),
+                            (int)SDL_lroundf(payload.f[1]));
+    } else {
+        payload.u = (Uint64)(intptr_t)event->user.data1;
+        SDL_SendMouseMotion(window, 0, 0,
+                            (int)SDL_lroundf(payload.f[0]),
+                            (int)SDL_lroundf(payload.f[1]));
+    }
+}
+
+static void OHOS_Mouse_HandleButton(_THIS, const SDL_Event *event)
+{
+    SDL_Window *window;
+    Uint8 button;
+    Uint8 state;
+
+    (void)_this;
+
+    window = SDL_GetWindowFromID(event->user.windowID);
+    if (window == NULL) {
         return;
     }
-    mouse_id = (SDL_MouseID)payload->mouse_id;
 
-    switch (payload->subtype) {
-    case OHOS_MOUSE_SUBTYPE_MOVE:
-        if (SDL_GetRelativeMouseMode() == SDL_TRUE) {
-            /* Raw deltas can be smaller than one unit, so the remainder is
-               carried over: truncating them would make a high resolution
-               device look like it stopped moving. */
-            int dx, dy;
+    button = OHOS_MouseTool_ButtonFromArkUI((int32_t)(intptr_t)event->user.data1);
+    if (button == 0) {
+        return;
+    }
+    state = (Uint8)(intptr_t)event->user.data2;
 
-            s_delta_accum_x += payload->u.move.dx;
-            s_delta_accum_y += payload->u.move.dy;
-            dx = (int)s_delta_accum_x;
-            dy = (int)s_delta_accum_y;
-            if (dx != 0 || dy != 0) {
-                s_delta_accum_x -= (float)dx;
-                s_delta_accum_y -= (float)dy;
-                SDL_SendMouseMotion(window, mouse_id, 1, dx, dy);
-            }
-        } else {
-            OHOS_WindowTool_ClientPointToSDL(window, &payload->u.move.x, &x);
-            OHOS_WindowTool_ClientPointToSDL(window, &payload->u.move.y, &y);
-            SDL_SendMouseMotion(window, mouse_id, 0, x, y);
-        }
-        break;
+    SDL_SendMouseButton(window, 0, state, button);
+}
 
-    case OHOS_MOUSE_SUBTYPE_BUTTON:
-        SDL_SendMouseButton(window, mouse_id, (Uint8)payload->u.button.state,
-                            (Uint8)payload->u.button.button);
-        break;
+static void OHOS_Mouse_HandleCancel(_THIS, const SDL_Event *event)
+{
+    SDL_Window *window;
+    Uint32 pressed;
+    int button;
 
-    case OHOS_MOUSE_SUBTYPE_RESET: {
-        Uint32 pressed = SDL_GetMouseState(NULL, NULL);
-        int button;
+    (void)_this;
 
-        for (button = SDL_BUTTON_LEFT; button <= SDL_BUTTON_X2; ++button) {
-            if (pressed & SDL_BUTTON(button)) {
-                SDL_SendMouseButton(window, mouse_id, SDL_RELEASED, (Uint8)button);
-            }
-        }
-        break;
+    window = SDL_GetWindowFromID(event->user.windowID);
+    if (window == NULL) {
+        return;
     }
 
-    case OHOS_MOUSE_SUBTYPE_WHEEL:
+    /* The gesture was cancelled, so the matching release never arrives. Report
+       every button SDL still considers held as released, or the application
+       keeps dragging forever. */
+    pressed = SDL_GetMouseState(NULL, NULL);
+    for (button = SDL_BUTTON_LEFT; button <= SDL_BUTTON_X2; ++button) {
+        if (pressed & SDL_BUTTON(button)) {
+            SDL_SendMouseButton(window, 0, SDL_RELEASED, (Uint8)button);
+        }
+    }
+}
+
+void OHOS_Mouse_HandleEvent(_THIS, const SDL_Event *event)
+{
+    if (event == NULL) {
+        return;
+    }
+
+    switch (event->user.code) {
+    case OHOS_MOUSE_EVENT_MOVE:
+        OHOS_Mouse_HandleMove(_this, event);
+        break;
+    case OHOS_MOUSE_EVENT_BUTTON:
+        OHOS_Mouse_HandleButton(_this, event);
+        break;
+    case OHOS_MOUSE_EVENT_CANCEL:
+        OHOS_Mouse_HandleCancel(_this, event);
+        break;
     default:
         break;
     }
-
-    SDL_free(payload);
 }
 
-void OHOS_Mouse_RegisterEvent(ArkUI_NodeHandle handle, int32_t id)
+void OHOS_MoveCursor(SDL_Cursor *cursor)
 {
-    int32_t result;
+    /* The system moves the pointer; there is nothing to do per motion event. */
+    (void)cursor;
+}
 
-    result = OH_ArkUI_NativeModule_RegisterCommonEvent(handle, NODE_ON_MOUSE,
-                                                      (void *)(intptr_t)id,
-                                                      OHOS_Mouse_HandleMouseEvent);
-    if (result != ARKUI_ERROR_CODE_NO_ERROR) {
-        SDL_LogError(SDL_LOG_CATEGORY_VIDEO,
-                     "OHOS_Mouse_RegisterEvent: registering mouse event failed (%d)",
-                     (int)result);
+void OHOS_FreeCursor(SDL_Cursor *cursor)
+{
+    OHOS_CursorData *data;
+
+    if (cursor == NULL) {
+        return;
     }
+
+    data = (OHOS_CursorData *)cursor->driverdata;
+    if (data != NULL) {
+        if (data->custom != NULL) {
+            OH_Input_CustomCursor_Destroy(&data->custom);
+        }
+        SDL_free(data);
+    }
+    SDL_free(cursor);
+}
+
+void OHOS_WarpMouse(SDL_Window *window, int x, int y)
+{
+    (void)window;
+    (void)x;
+    (void)y;
+
+    SDL_Unsupported();
+}
+
+int OHOS_WarpMouseGlobal(int x, int y)
+{
+    (void)x;
+    (void)y;
+
+    return SDL_Unsupported();
+}
+
+int OHOS_SetRelativeMouseMode(SDL_bool enabled)
+{
+    /* There is no pointer lock, so relative mode is emulated: the mouse callback
+       reports the RAW_DELTA values and SDL_Mouse consumes them as relative motion. */
+    (void)enabled;
+
+    return 0;
+}
+
+int OHOS_CaptureMouse(SDL_Window *window)
+{
+    (void)window;
+
+    return SDL_Unsupported();
+}
+
+Uint32 OHOS_GetGlobalMouseState(int *x, int *y)
+{
+    SDL_Window *window;
+    int window_x = 0, window_y = 0;
+    Uint32 state;
+
+    /* SDL keeps the pointer relative to the window it was last reported for. */
+    state = SDL_GetMouseState(x, y);
+
+    window = SDL_GetMouseFocus();
+    if (window != NULL) {
+        SDL_GetWindowPosition(window, &window_x, &window_y);
+    }
+
+    *x += window_x;
+    *y += window_y;
+
+    return state;
+}
+
+void OHOS_MouseInit(void)
+{
+    SDL_Mouse *mouse = SDL_GetMouse();
+
+    mouse->CreateCursor = OHOS_CreateCursor;
+    mouse->CreateSystemCursor = OHOS_CreateSystemCursor;
+    mouse->ShowCursor = OHOS_ShowCursor;
+    mouse->MoveCursor = OHOS_MoveCursor;
+    mouse->FreeCursor = OHOS_FreeCursor;
+    mouse->WarpMouse = OHOS_WarpMouse;
+    mouse->WarpMouseGlobal = OHOS_WarpMouseGlobal;
+    mouse->SetRelativeMouseMode = OHOS_SetRelativeMouseMode;
+    mouse->CaptureMouse = OHOS_CaptureMouse;
+    mouse->GetGlobalMouseState = OHOS_GetGlobalMouseState;
 }
 
 #endif /* SDL_VIDEO_DRIVER_OHOS */

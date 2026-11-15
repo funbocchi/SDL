@@ -19,6 +19,7 @@
   3. This notice may not be removed or altered from any source distribution.
 */
 #include "../../SDL_internal.h"
+#include "SDL_video.h"
 
 #ifndef SDL2_OHOS_SDL_OHOS_H
 #define SDL2_OHOS_SDL_OHOS_H
@@ -34,8 +35,33 @@ typedef enum
     OHOS_EVENT_GL,
     OHOS_EVENT_MOUSE,
     OHOS_EVENT_KEYBOARD,
+    OHOS_EVENT_TOUCH,
     OHOS_EVENT_COUNT
 } OHOSEventType;
+
+typedef enum OHOS_MouseEventCode
+{
+    OHOS_MOUSE_EVENT_MOVE = 0,   /* data1 = {x, y}, data2 = {dx, dy} */
+    OHOS_MOUSE_EVENT_BUTTON,     /* data1 = button, data2 = state */
+    OHOS_MOUSE_EVENT_CANCEL      /* no payload, every pressed button is released */
+} OHOS_MouseEventCode;
+
+/* Packs two floats into one pointer-sized slot; only valid where void * is 64 bits. */
+typedef union OHOS_FloatPair
+{
+    float  f[2];
+    Uint64 u;
+} OHOS_FloatPair;
+
+typedef enum OHOS_KeyboardEventCode
+{
+    OHOS_KEYBOARD_EVENT_KEY = 0   /* data1 = key code, data2 = ArkUI_KeyEventType */
+} OHOS_KeyboardEventCode;
+
+typedef enum OHOS_TouchEventCode
+{
+    OHOS_TOUCH_EVENT_POINT = 0    /* data1 = {x, y} px, data2 = action << 32 | finger id */
+} OHOS_TouchEventCode;
 
 typedef enum OHOS_GLSurfaceEventCode
 {
@@ -46,19 +72,53 @@ typedef enum OHOS_GLSurfaceEventCode
     OHOS_GL_EVENT_SURFACE_HIDDEN
 } OHOS_GLSurfaceEventCode;
 
+typedef enum OHOS_WindowEventCode
+{
+    OHOS_WINDOW_EVENT_STATE_CHANGED = 0,      /* windowEvent,            data1 = WindowEventType */
+    OHOS_WINDOW_EVENT_RECT_CHANGED,           /* windowRectChange,       data1 = SDL_Rect *, data2 = displayId */
+    OHOS_WINDOW_EVENT_STATUS_CHANGED,         /* windowStatusChange,     data1 = WindowStatusType */
+    OHOS_WINDOW_EVENT_DISPLAY_CHANGED,        /* displayIdChange,        data1 = displayId */
+    OHOS_WINDOW_EVENT_VISIBILITY_CHANGED,     /* windowVisibilityChange, data1 = visible */
+    OHOS_WINDOW_EVENT_FOCUS_CHANGED,          /* XComponent focus/blur,  data1 = SDL_TRUE when focused */
+    OHOS_WINDOW_EVENT_ID_ASSIGNED             /* window obtained,        data1 = OHOS window id */
+} OHOS_WindowEventCode;
+
 extern void OHOS_Main_SetAppLibrary(const char *library);
 
 extern void OHOS_Main_StartApp(void);
 
+/* Copies the cached system locale, "language_REGION"; safe from any SDL thread. */
+extern void OHOS_Locale_GetPreferredLocales(char *buf, size_t buflen);
+
 /* SDL_Window related operations */
 
-extern int  OHOS_Window_Create       (Uint32 sdl_window_id, SDL_bool bordered, int width, int height, int pos_x, int pos_y);
-extern void OHOS_Window_Destroy      (Uint32 sdl_window_id);
-extern void OHOS_Window_SetSize      (Uint32 sdl_window_id, int width, int height);
-extern void OHOS_Window_SetPos       (Uint32 sdl_window_id, int pos_x, int pos_y);
-extern void OHOS_Window_SetTitle     (Uint32 sdl_window_id, const char *title);
-extern void OHOS_Window_Show         (Uint32 sdl_window_id, SDL_bool is_shown);
-extern void OHOS_Window_SetBordered  (Uint32 sdl_window_id, SDL_bool bordered, int width, int height, int pos_x, int pos_y);
+extern int   OHOS_Window_Create          (Uint32 sdl_window_id, SDL_bool bordered, int width, int height, int pos_x, int pos_y, SDL_bool resizable);
+extern void  OHOS_Window_Destroy         (Uint32 sdl_window_id);
+extern void  OHOS_Window_Show            (Uint32 sdl_window_id);
+extern void  OHOS_Window_Hide            (Uint32 sdl_window_id);
+extern void  OHOS_Window_SetSize         (Uint32 sdl_window_id, int width, int height);
+extern void  OHOS_Window_SetPos          (Uint32 sdl_window_id, int pos_x, int pos_y);
+extern void  OHOS_Window_SetTitle        (Uint32 sdl_window_id, const char *title);
+extern void  OHOS_Window_SetBordered     (Uint32 sdl_window_id, SDL_bool bordered, int width, int height, int pos_x, int pos_y);
+extern void  OHOS_Window_SetMinimumSize  (Uint32 sdl_window_id, int width, int height);
+extern void  OHOS_Window_SetMaximumSize  (Uint32 sdl_window_id, int width, int height);
+extern int   OHOS_Window_SetOpacity      (Uint32 sdl_window_id, float opacity);
+extern int   OHOS_Window_SetModalFor     (Uint32 modal_window_id, Uint32 parent_window_id);
+extern int   OHOS_Window_SetInputFocus   (Uint32 sdl_window_id);
+extern void  OHOS_Window_Raise           (Uint32 sdl_window_id);
+extern void  OHOS_Window_Maximize        (Uint32 sdl_window_id);
+extern void  OHOS_Window_Minimize        (Uint32 sdl_window_id);
+extern void  OHOS_Window_Restore         (Uint32 sdl_window_id);
+extern void  OHOS_Window_SetResizable    (Uint32 sdl_window_id, SDL_bool resizable);
+extern void  OHOS_Window_SetAlwaysOnTop  (Uint32 sdl_window_id, SDL_bool on_top);
+extern void  OHOS_Window_SetFullscreen   (Uint32 sdl_window_id, SDL_bool fullscreen);
+extern void  OHOS_Window_SetMouseGrab    (Uint32 sdl_window_id, SDL_bool grabbed);
+extern void  OHOS_Window_SetKeyboardGrab (Uint32 sdl_window_id, SDL_bool grabbed);
+extern int   OHOS_Window_SetGammaRamp    (Uint32 sdl_window_id, const Uint16 *ramp);
+extern int   OHOS_Window_GetGammaRamp    (Uint32 sdl_window_id, Uint16 *ramp);
+extern void *OHOS_Window_GetICCProfile   (Uint32 sdl_window_id, size_t *size);
+extern void  OHOS_Window_SetMouseRect    (Uint32 sdl_window_id);
+extern int   OHOS_Window_Flash           (Uint32 sdl_window_id, SDL_FlashOperation operation);
 
 /* Ends C function definitions when using C++ */
 #ifdef __cplusplus

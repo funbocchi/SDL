@@ -40,6 +40,8 @@
 #include "SDL_ohosevents.h"
 #include "SDL_ohosmessagebox.h"
 #include "SDL_ohoswindow.h"
+#include "SDL_ohosmouse.h"
+#include "SDL_ohoskeyboard.h"
 
 #define OHOS_VID_DRIVER_NAME "OHOS"
 
@@ -224,6 +226,8 @@ static int OHOS_VideoInit(_THIS)
 
     OHOS_Event_Register();
 
+    OHOS_MouseInit();
+
     return retval;
 
 errfunc:
@@ -349,9 +353,6 @@ static SDL_VideoDevice *OHOS_CreateDevice(void)
     device->SetWindowMaximumSize = OHOS_SetWindowMaximumSize;
     device->GetWindowBordersSize = OHOS_GetWindowBordersSize;
     device->GetWindowSizeInPixels = OHOS_GetWindowSizeInPixels;
-    device->SetWindowOpacity = OHOS_SetWindowOpacity;
-    device->SetWindowModalFor = OHOS_SetWindowModalFor;
-    device->SetWindowInputFocus = OHOS_SetWindowInputFocus;
     device->ShowWindow = OHOS_ShowWindow;
     device->HideWindow = OHOS_HideWindow;
     device->RaiseWindow = OHOS_RaiseWindow;
@@ -360,21 +361,21 @@ static SDL_VideoDevice *OHOS_CreateDevice(void)
     device->RestoreWindow = OHOS_RestoreWindow;
     device->SetWindowBordered = OHOS_SetWindowBordered;
     device->SetWindowResizable = OHOS_SetWindowResizable;
-    device->SetWindowAlwaysOnTop = OHOS_SetWindowAlwaysOnTop;
     device->SetWindowFullscreen = OHOS_SetWindowFullscreen;
-    device->SetWindowGammaRamp = OHOS_SetWindowGammaRamp;
-    device->GetWindowGammaRamp = OHOS_GetWindowGammaRamp;
     device->GetWindowICCProfile = OHOS_GetWindowICCProfile;
     device->GetWindowDisplayIndex = OHOS_GetWindowDisplayIndex;
-    device->SetWindowMouseRect = OHOS_SetWindowMouseRect;
-    device->SetWindowMouseGrab = OHOS_SetWindowMouseGrab;
-    device->SetWindowKeyboardGrab = OHOS_SetWindowKeyboardGrab;
     device->DestroyWindow = OHOS_DestroyWindow;
     device->CreateWindowFramebuffer = OHOS_CreateWindowFramebuffer;
     device->UpdateWindowFramebuffer = OHOS_UpdateWindowFramebuffer;
     device->DestroyWindowFramebuffer = OHOS_DestroyWindowFramebuffer;
     device->OnWindowEnter = OHOS_OnWindowEnter;
-    device->FlashWindow = OHOS_FlashWindow;
+    device->StartTextInput = OHOS_StartTextInput;
+    device->StopTextInput = OHOS_StopTextInput;
+    device->SetTextInputRect = OHOS_SetTextInputRect;
+    device->HasScreenKeyboardSupport = OHOS_HasScreenKeyboardSupport;
+    device->ShowScreenKeyboard = OHOS_ShowScreenKeyboard;
+    device->HideScreenKeyboard = OHOS_HideScreenKeyboard;
+    device->IsScreenKeyboardShown = OHOS_IsScreenKeyboardShown;
 
 #ifdef SDL_VIDEO_OPENGL_EGL
     device->GL_LoadLibrary = OHOS_GL_LoadLibrary;

@@ -23,16 +23,26 @@
 #ifndef SDL_OHOSMOUSE_H
 #define SDL_OHOSMOUSE_H
 
-#include <arkui/common_type.h>
-
 #include "../SDL_sysvideo.h"
 #include "SDL_events.h"
 
-/* Registers the NODE_ON_MOUSE callback for one window's XComponent node. */
-extern void OHOS_Mouse_RegisterEvent(ArkUI_NodeHandle handle, int32_t id);
-
 /* Consumes the OHOS_EVENT_MOUSE user events on the SDL thread. */
 extern void OHOS_Mouse_HandleEvent(_THIS, const SDL_Event *event);
+
+/* SDL_Mouse hooks */
+
+extern void        OHOS_MouseInit(void);
+
+extern SDL_Cursor *OHOS_CreateCursor(SDL_Surface *surface, int hot_x, int hot_y);
+extern SDL_Cursor *OHOS_CreateSystemCursor(SDL_SystemCursor id);
+extern int         OHOS_ShowCursor(SDL_Cursor *cursor);
+extern void        OHOS_MoveCursor(SDL_Cursor *cursor);
+extern void        OHOS_FreeCursor(SDL_Cursor *cursor);
+extern void        OHOS_WarpMouse(SDL_Window *window, int x, int y);
+extern int         OHOS_WarpMouseGlobal(int x, int y);
+extern int         OHOS_SetRelativeMouseMode(SDL_bool enabled);
+extern int         OHOS_CaptureMouse(SDL_Window *window);
+extern Uint32      OHOS_GetGlobalMouseState(int *x, int *y);
 
 #endif /* SDL_OHOSMOUSE_H */
 

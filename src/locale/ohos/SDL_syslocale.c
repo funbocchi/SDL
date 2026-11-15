@@ -25,7 +25,9 @@
 
 void SDL_SYS_GetPreferredLocales(char *buf, size_t buflen)
 {
-    SDL_OHOS_GetLocale(buf, buflen);
+    /* The value is cached by the JS thread, which is the only place the i18n
+       object can be reached; this side just copies it out under a mutex. */
+    OHOS_Locale_GetPreferredLocales(buf, buflen);
 }
 
 /* vi: set ts=4 sw=4 expandtab: */
