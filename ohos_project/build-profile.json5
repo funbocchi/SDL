@@ -27,20 +27,14 @@
   },
   "modules": [
     {
-      "name": "entry",
-      "srcPath": "./entry",
+      "name": "ohos_sdl2_sample",
+      "srcPath": "./ohos_sdl2_sample",
       "targets": [
         {
           "name": "default",
-          "applyToProducts": [
-            "default"
-          ]
+          "applyToProducts": ["default"]
         }
       ]
-    },
-    {
-      "name": "sdl2",
-      "srcPath": "./sdl2"
     }
   ]
 }
