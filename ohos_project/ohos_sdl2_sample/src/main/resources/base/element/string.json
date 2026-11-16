@@ -1,0 +1,16 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "module description"
+    },
+    {
+      "name": "ohosSdl2SampleAbility_desc",
+      "value": "description"
+    },
+    {
+      "name": "ohosSdl2SampleAbility_label",
+      "value": "label"
+    }
+  ]
+}
