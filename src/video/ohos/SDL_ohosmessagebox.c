@@ -21,16 +21,14 @@
 #include "../../SDL_internal.h"
 
 #ifdef SDL_VIDEO_DRIVER_OHOS
-
-#include "../../core/ohos/SDL_ohos.h"
-#include "SDL_messagebox.h"
 #include "SDL_ohosmessagebox.h"
 
-
-int OHOS_ShowMessageBox(const SDL_MessageBoxData *box_data, int *button_id)
+int OHOS_ShowMessageBox(const SDL_MessageBoxData *messagebox_data, int *button_id)
 {
+    (void)messagebox_data;
+    (void)button_id;
+
+    return SDL_Unsupported();
 }
 
 #endif
-
-/* vi: set ts=4 sw=4 expandtab: */

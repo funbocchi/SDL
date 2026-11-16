@@ -22,7 +22,9 @@
 
 #ifdef SDL_VIDEO_DRIVER_OHOS
 
-extern int OHOS_ShowMessageBox(const SDL_MessageBoxData *box_data, int *button_id);
+#include "SDL_messagebox.h"
+
+extern int OHOS_ShowMessageBox(const SDL_MessageBoxData *messagebox_data, int *button_id);
 
 #endif
 
