@@ -38,6 +38,7 @@
 #include "SDL_mutex.h"
 #include "SDL_events.h"
 #include "SDL_main.h"
+#include "../../events/SDL_events_c.h"
 
 #include <dlfcn.h>
 #include <pthread.h>
@@ -195,9 +196,9 @@ static OHOS_WindowRequest *OHOS_WindowEventQueue_Dequeue(OHOS_WindowEventQ *queu
         if (queue->pending_tail == request) {
             queue->pending_tail = NULL;
         }
+        request->next = NULL;
     }
     SDL_UnlockMutex(queue->lock);
-    request->next = NULL;
     return request;
 }
 
@@ -2180,10 +2181,318 @@ static napi_value OHOS_Napi_ProvideArkTSObjects(napi_env env, napi_callback_info
     return retval;
 }
 
+static napi_value OHOS_Napi_HandleAbilityOnCreate(napi_env env, napi_callback_info info)
+{
+    size_t argc = 3;
+    napi_value argv[3] = { NULL, NULL, NULL };
+    napi_value retval = NULL;
+
+    napi_get_cb_info(env, info, &argc, argv, NULL, NULL);
+    napi_get_undefined(env, &retval);
+    return retval;
+}
+
+static napi_value OHOS_Napi_HandleAbilityOnNewWant(napi_env env, napi_callback_info info)
+{
+    size_t argc = 3;
+    napi_value argv[3] = { NULL, NULL, NULL };
+    napi_value retval = NULL;
+
+    napi_get_cb_info(env, info, &argc, argv, NULL, NULL);
+    napi_get_undefined(env, &retval);
+    return retval;
+}
+
+static napi_value OHOS_Napi_HandleAbilityOnWindowStageCreate(napi_env env, napi_callback_info info)
+{
+    size_t argc = 2;
+    napi_value argv[2] = { NULL, NULL };
+    napi_value retval = NULL;
+
+    napi_get_cb_info(env, info, &argc, argv, NULL, NULL);
+    napi_get_undefined(env, &retval);
+    return retval;
+}
+
+static napi_value OHOS_Napi_HandleAbilityOnWindowStageWillDestroy(napi_env env, napi_callback_info info)
+{
+    size_t argc = 2;
+    napi_value argv[2] = { NULL, NULL };
+    napi_value retval = NULL;
+
+    napi_get_cb_info(env, info, &argc, argv, NULL, NULL);
+
+    SDL_SendAppEvent(SDL_APP_TERMINATING);
+
+    napi_get_undefined(env, &retval);
+    return retval;
+}
+
+static napi_value OHOS_Napi_HandleAbilityOnWindowStageRestore(napi_env env, napi_callback_info info)
+{
+    size_t argc = 2;
+    napi_value argv[2] = { NULL, NULL };
+    napi_value retval = NULL;
+
+    napi_get_cb_info(env, info, &argc, argv, NULL, NULL);
+
+    napi_get_undefined(env, &retval);
+    return retval;
+}
+
+static napi_value OHOS_Napi_HandleAbilityOnWindowStageDestroy(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value argv[1] = { NULL };
+    napi_value retval = NULL;
+
+    napi_get_cb_info(env, info, &argc, argv, NULL, NULL);
+
+    napi_get_undefined(env, &retval);
+    return retval;
+}
+
+static napi_value OHOS_Napi_HandleAbilityOnWillForeground(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value argv[1] = { NULL };
+    napi_value retval = NULL;
+
+    napi_get_cb_info(env, info, &argc, argv, NULL, NULL);
+    SDL_SendAppEvent(SDL_APP_WILLENTERFOREGROUND);
+
+    napi_get_undefined(env, &retval);
+    return retval;
+}
+
+static napi_value OHOS_Napi_HandleAbilityOnForeground(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value argv[1] = { NULL };
+    napi_value retval = NULL;
+
+    napi_get_cb_info(env, info, &argc, argv, NULL, NULL);
+
+    napi_get_undefined(env, &retval);
+    return retval;
+}
+
+static napi_value OHOS_Napi_HandleAbilityOnDidForeground(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value argv[1] = { NULL };
+    napi_value retval = NULL;
+
+    napi_get_cb_info(env, info, &argc, argv, NULL, NULL);
+    SDL_SendAppEvent(SDL_APP_DIDENTERFOREGROUND);
+
+    napi_get_undefined(env, &retval);
+    return retval;
+}
+
+static napi_value OHOS_Napi_HandleAbilityOnWillBackground(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value argv[1] = { NULL };
+    napi_value retval = NULL;
+
+    napi_get_cb_info(env, info, &argc, argv, NULL, NULL);
+    SDL_SendAppEvent(SDL_APP_WILLENTERBACKGROUND);
+
+    napi_get_undefined(env, &retval);
+    return retval;
+}
+
+static napi_value OHOS_Napi_HandleAbilityOnBackground(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value argv[1] = { NULL };
+    napi_value retval = NULL;
+
+    napi_get_cb_info(env, info, &argc, argv, NULL, NULL);
+
+    napi_get_undefined(env, &retval);
+    return retval;
+}
+
+static napi_value OHOS_Napi_HandleAbilityOnDidBackground(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value argv[1] = { NULL };
+    napi_value retval = NULL;
+
+    napi_get_cb_info(env, info, &argc, argv, NULL, NULL);
+    SDL_SendAppEvent(SDL_APP_DIDENTERBACKGROUND);
+    napi_get_undefined(env, &retval);
+    return retval;
+}
+
+static napi_value OHOS_Napi_HandleAbilityOnPrepareToTerminate(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value argv[1] = { NULL };
+    napi_value retval = NULL;
+    napi_valuetype ability_type = napi_undefined;
+
+    napi_get_cb_info(env, info, &argc, argv, NULL, NULL);
+    napi_typeof(env, argv[0], &ability_type);
+    SDL_LogInfo(SDL_LOG_CATEGORY_VIDEO, "OHOS ability onPrepareToTerminate: argc=%u ability=%p(%d)",
+                (unsigned int)argc, (void *)argv[0], (int)ability_type);
+
+    napi_get_boolean(env, true, &retval);
+    return retval;
+}
+
+static napi_value OHOS_Napi_HandleAbilityOnPrepareToTerminateAsync(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value argv[1] = { NULL };
+    napi_value retval = NULL;
+    napi_value resolution = NULL;
+    napi_deferred deferred = NULL;
+
+    napi_get_cb_info(env, info, &argc, argv, NULL, NULL);
+
+    napi_create_promise(env, &deferred, &retval);
+    napi_get_boolean(env, true, &resolution);
+    napi_resolve_deferred(env, deferred, resolution);
+    return retval;
+}
+
+static napi_value OHOS_Napi_HandleAbilityOnConfigurationUpdate(napi_env env, napi_callback_info info)
+{
+    size_t argc = 2;
+    napi_value argv[2] = { NULL, NULL };
+    napi_value retval = NULL;
+    napi_valuetype ability_type = napi_undefined;
+    napi_valuetype config_type = napi_undefined;
+
+    napi_get_cb_info(env, info, &argc, argv, NULL, NULL);
+    napi_typeof(env, argv[0], &ability_type);
+    napi_typeof(env, argv[1], &config_type);
+    SDL_LogInfo(SDL_LOG_CATEGORY_VIDEO,
+                "OHOS ability onConfigurationUpdate: argc=%u ability=%p(%d) newConfig=%p(%d)",
+                (unsigned int)argc, (void *)argv[0], (int)ability_type, (void *)argv[1],
+                (int)config_type);
+
+    napi_get_undefined(env, &retval);
+    return retval;
+}
+
+static napi_value OHOS_Napi_HandleAbilityOnMemoryLevel(napi_env env, napi_callback_info info)
+{
+    size_t argc = 2;
+    napi_value argv[2] = { NULL, NULL };
+    napi_value retval = NULL;
+    int32_t level = 0;
+    napi_valuetype ability_type = napi_undefined;
+    napi_valuetype level_type = napi_undefined;
+
+    napi_get_cb_info(env, info, &argc, argv, NULL, NULL);
+    napi_typeof(env, argv[0], &ability_type);
+    napi_typeof(env, argv[1], &level_type);
+    napi_get_value_int32(env, argv[1], &level);
+    SDL_LogInfo(SDL_LOG_CATEGORY_VIDEO,
+                "OHOS ability onMemoryLevel: argc=%u ability=%p(%d) level=%d(%d)",
+                (unsigned int)argc, (void *)argv[0], (int)ability_type, (int)level, (int)level_type);
+
+    napi_get_undefined(env, &retval);
+    return retval;
+}
+
+static napi_value OHOS_Napi_HandleAbilityOnContinue(napi_env env, napi_callback_info info)
+{
+    size_t argc = 2;
+    napi_value argv[2] = { NULL, NULL };
+    napi_value retval = NULL;
+    napi_valuetype ability_type = napi_undefined;
+    napi_valuetype want_param_type = napi_undefined;
+
+    napi_get_cb_info(env, info, &argc, argv, NULL, NULL);
+    napi_typeof(env, argv[0], &ability_type);
+    napi_typeof(env, argv[1], &want_param_type);
+    SDL_LogInfo(SDL_LOG_CATEGORY_VIDEO,
+                "OHOS ability onContinue: argc=%u ability=%p(%d) wantParam=%p(%d)",
+                (unsigned int)argc, (void *)argv[0], (int)ability_type, (void *)argv[1],
+                (int)want_param_type);
+
+    napi_create_int32(env, 0, &retval);
+    return retval;
+}
+
+
+
+
+
+
+
+static napi_value OHOS_Napi_HandleAbilityOnDestroy(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value argv[1] = { NULL };
+    napi_value retval = NULL;
+    napi_valuetype ability_type = napi_undefined;
+
+    napi_get_cb_info(env, info, &argc, argv, NULL, NULL);
+    napi_typeof(env, argv[0], &ability_type);
+    SDL_LogInfo(SDL_LOG_CATEGORY_VIDEO, "OHOS ability onDestroy: argc=%u ability=%p(%d)",
+                (unsigned int)argc, (void *)argv[0], (int)ability_type);
+
+    napi_get_undefined(env, &retval);
+    return retval;
+}
+/* Exposed to the page: addNode(nodeContent, sdlWindowId) receives the NodeContent the
+   page provides and the SDL window the node has to be created for. */
+static napi_value OHOS_Napi_AddNode(napi_env env, napi_callback_info info)
+{
+    size_t argc = 2;
+    napi_value argv[2] = { NULL, NULL };
+    napi_value retval = NULL;
+    ArkUI_NodeContentHandle content = NULL;
+    uint32_t sdl_window_id = 0;
+    int32_t content_status;
+    napi_status id_status;
+
+    napi_get_cb_info(env, info, &argc, argv, NULL, NULL);
+    if (argc < 2) {
+        SDL_LogError(SDL_LOG_CATEGORY_VIDEO, "OHOS addNode: expected (nodeContent, sdlWindowId)");
+        napi_get_boolean(env, false, &retval);
+        return retval;
+    }
+
+    content_status = OH_ArkUI_GetNodeContentFromNapiValue(env, argv[0], &content);
+    id_status = napi_get_value_uint32(env, argv[1], &sdl_window_id);
+
+    SDL_LogInfo(SDL_LOG_CATEGORY_VIDEO,
+                "OHOS addNode: nodeContent=%p contentStatus=%d sdlWindowId=%u idStatus=%d",
+                (void *)content, (int)content_status, sdl_window_id, (int)id_status);
+
+    napi_get_boolean(env, content != NULL && id_status == napi_ok, &retval);
+    return retval;
+}
+
 static napi_value OHOS_Napi_InitModule(napi_env env, napi_value exports)
 {
     napi_property_descriptor desc[] = {
-        {"provideArkTSObjects", NULL, OHOS_Napi_ProvideArkTSObjects, NULL, NULL, NULL, napi_default, NULL},
+        {"handleAbilityOnCreate",                    NULL, OHOS_Napi_HandleAbilityOnCreate, NULL, NULL, NULL, napi_default, NULL},
+        {"handleAbilityOnNewWant",                   NULL, OHOS_Napi_HandleAbilityOnNewWant, NULL, NULL, NULL, napi_default, NULL},
+        {"handleAbilityOnWindowStageCreate",         NULL, OHOS_Napi_HandleAbilityOnWindowStageCreate, NULL, NULL, NULL, napi_default, NULL},
+        {"handleAbilityOnWindowStageWillDestroy",    NULL, OHOS_Napi_HandleAbilityOnWindowStageWillDestroy, NULL, NULL, NULL, napi_default, NULL},
+        {"handleAbilityOnWindowStageRestore",        NULL, OHOS_Napi_HandleAbilityOnWindowStageRestore, NULL, NULL, NULL, napi_default, NULL},
+        {"handleAbilityOnWindowStageDestroy",        NULL, OHOS_Napi_HandleAbilityOnWindowStageDestroy, NULL, NULL, NULL, napi_default, NULL},
+        {"handleAbilityOnWillForeground",            NULL, OHOS_Napi_HandleAbilityOnWillForeground, NULL, NULL, NULL, napi_default, NULL},
+        {"handleAbilityOnForeground",                NULL, OHOS_Napi_HandleAbilityOnForeground, NULL, NULL, NULL, napi_default, NULL},
+        {"handleAbilityOnDidForeground",             NULL, OHOS_Napi_HandleAbilityOnDidForeground, NULL, NULL, NULL, napi_default, NULL},
+        {"handleAbilityOnWillBackground",            NULL, OHOS_Napi_HandleAbilityOnWillBackground, NULL, NULL, NULL, napi_default, NULL},
+        {"handleAbilityOnBackground",                NULL, OHOS_Napi_HandleAbilityOnBackground, NULL, NULL, NULL, napi_default, NULL},
+        {"handleAbilityOnDidBackground",             NULL, OHOS_Napi_HandleAbilityOnDidBackground, NULL, NULL, NULL, napi_default, NULL},
+        {"handleAbilityOnPrepareToTerminate",        NULL, OHOS_Napi_HandleAbilityOnPrepareToTerminate, NULL, NULL, NULL, napi_default, NULL},
+        {"handleAbilityOnPrepareToTerminateAsync",   NULL, OHOS_Napi_HandleAbilityOnPrepareToTerminateAsync, NULL, NULL, NULL, napi_default, NULL},
+        {"handleAbilityOnConfigurationUpdate",       NULL, OHOS_Napi_HandleAbilityOnConfigurationUpdate, NULL, NULL, NULL, napi_default, NULL},
+        {"handleAbilityOnMemoryLevel",               NULL, OHOS_Napi_HandleAbilityOnMemoryLevel, NULL, NULL, NULL, napi_default, NULL},
+        {"handleAbilityOnContinue",                  NULL, OHOS_Napi_HandleAbilityOnContinue, NULL, NULL, NULL, napi_default, NULL},
+        {"handleAbilityOnDestroy",                   NULL, OHOS_Napi_HandleAbilityOnDestroy, NULL, NULL, NULL, napi_default, NULL},
+        {"addNode",                                  NULL, OHOS_Napi_AddNode, NULL, NULL, NULL, napi_default, NULL},
     };
     napi_define_properties(env, exports, sizeof(desc)/sizeof(desc[0]), desc);
 
