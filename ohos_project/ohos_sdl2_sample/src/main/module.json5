@@ -3,7 +3,7 @@
     "name": "ohos_sdl2_sample",
     "type": "entry",
     "description": "$string:module_desc",
-    "mainElement": "ohosSdl2SampleAbility",
+    "mainElement": "SDLAbility",
     "deviceTypes": [
       "phone",
       "tablet",
@@ -14,11 +14,11 @@
     "pages": "$profile:main_pages",
     "abilities": [
       {
-        "name": "ohosSdl2SampleAbility",
-        "srcEntry": "./ets/ohossdl2sampleability/Sdl2SampleAbility.ets",
-        "description": "$string:ohosSdl2SampleAbility_desc",
+        "name": "SDLAbility",
+        "srcEntry": "./ets/ability/SDLAbility.ets",
+        "description": "$string:SDLAbility_desc",
         "icon": "$media:layered_image",
-        "label": "$string:ohosSdl2SampleAbility_label",
+        "label": "$string:SDLAbility_label",
         "startWindowIcon": "$media:startIcon",
         "startWindowBackground": "$color:start_window_background",
         "exported": true,

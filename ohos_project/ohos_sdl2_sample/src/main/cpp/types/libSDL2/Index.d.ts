@@ -6,7 +6,8 @@ import { NodeContent, window } from '@kit.ArkUI';
  * window for it. The names follow the UIAbility callbacks one to one.
  */
 export const handleAbilityOnCreate: (ability: UIAbility, want: Want,
-  launchParam: AbilityConstant.LaunchParam) => void;
+  launchParam: AbilityConstant.LaunchParam, appLibrary?: string,
+  arkTSFactories?: Record<string, object>) => void;
 
 export const handleAbilityOnWindowStageCreate: (ability: UIAbility,
   windowStage: window.WindowStage) => void;
@@ -14,12 +15,10 @@ export const handleAbilityOnWindowStageCreate: (ability: UIAbility,
 export const handleAbilityOnWindowStageWillDestroy: (ability: UIAbility,
   windowStage: window.WindowStage) => void;
 
-export const handleAbilityOnWindowStageDestroy: (ability: UIAbility) => void;
-
 export const handleAbilityOnWindowStageRestore: (ability: UIAbility,
   windowStage: window.WindowStage) => void;
 
-export const handleAbilityOnDestroy: (ability: UIAbility) => void;
+export const handleAbilityOnWindowStageDestroy: (ability: UIAbility) => void;
 
 export const handleAbilityOnWillForeground: (ability: UIAbility) => void;
 
@@ -33,14 +32,20 @@ export const handleAbilityOnBackground: (ability: UIAbility) => void;
 
 export const handleAbilityOnDidBackground: (ability: UIAbility) => void;
 
+export const handleAbilityOnPrepareToTerminate: (ability: UIAbility) => boolean;
+
+export const handleAbilityOnPrepareToTerminateAsync: (ability: UIAbility) => Promise<boolean>;
+
 export const handleAbilityOnConfigurationUpdate: (ability: UIAbility,
   newConfig: Configuration) => void;
 
 export const handleAbilityOnMemoryLevel: (ability: UIAbility,
   level: AbilityConstant.MemoryLevel) => void;
 
+export const handleAbilityOnDestroy: (ability: UIAbility) => void;
+
 /**
- * Creates the XComponent of the given SDL window and attaches it to the NodeContent the
- * page provides. Called from the page's aboutToAppear.
+ * Creates the XComponent of the given SDL window, binds a SurfaceHolder to it and adds
+ * the node to the NodeContent the page provides. Called from the page aboutToAppear.
  */
-export const addNode: (nodeContent: NodeContent, sdlWindowId: number) => boolean;
+export const handleNodeContent: (nodeContent: NodeContent, sdlWindowId: number) => boolean;

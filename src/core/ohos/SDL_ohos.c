@@ -90,14 +90,6 @@ typedef struct OHOS_WindowRequest
     SDL_sem                    *sem;
     napi_ref                   *ohos_window_ref_slot;
     napi_ref                    ohos_window_ref_value;
-    ArkUI_NodeHandle           *xc_slot;
-    ArkUI_NodeHandle            xc_value;
-    ArkUI_NodeHandle           *parent_slot;
-    ArkUI_NodeHandle            parent_value;
-    OH_ArkUI_SurfaceHolder    **surface_holder_slot;
-    OH_ArkUI_SurfaceHolder     *surface_holder_value;
-    OH_ArkUI_SurfaceCallback  **surface_callback_slot;
-    OH_ArkUI_SurfaceCallback   *surface_callback_value;
     int32_t                    *ohos_window_id_slot;
     int32_t                     ohos_window_id_value;
 
@@ -114,8 +106,6 @@ typedef struct OHOS_WindowRequest
 
 /* Apply for relevant interfaces */
 
-/* NodeContent tools */
-
 /* WindowEventQ tools */
 
 typedef struct OHOS_WindowEventQ
@@ -128,10 +118,6 @@ typedef struct OHOS_WindowEventQ
     OHOS_WindowRequest         *pending_head;
     OHOS_WindowRequest         *pending_tail;
     SDL_bool                    destroying;
-    ArkUI_NodeHandle            xc;
-    ArkUI_NodeHandle            parent;
-    OH_ArkUI_SurfaceHolder     *surface_holder;
-    OH_ArkUI_SurfaceCallback   *surface_callback;
     int32_t                     ohos_window_id;
 
     struct OHOS_WindowEventQ   *next;
@@ -252,19 +238,6 @@ static ArkUI_NativeNodeAPI_1 *OHOS_Tool_EnsureNodeApi()
     return node_api;
 }
 
-static int32_t OHOS_Tool_EnableCrossLanguage(ArkUI_NodeHandle handle)
-{
-    int32_t retval = 0;
-    ArkUI_CrossLanguageOption *option = OH_ArkUI_CrossLanguageOption_Create();
-    if (option == NULL) {
-        return ARKUI_ERROR_CODE_PARAM_INVALID;
-    }
-    OH_ArkUI_CrossLanguageOption_SetAttributeSettingStatus(option, true);
-    OH_ArkUI_CrossLanguageOption_SetTreeOperatingStatus(option, true);
-    retval = OH_ArkUI_NodeUtils_SetCrossLanguageOption(handle, option);
-    OH_ArkUI_CrossLanguageOption_Destroy(option);
-    return retval;
-}
 
 static napi_value OHOS_Tool_PromiseThen(napi_env env, napi_value promise, napi_callback callback, void *data, const char *name)
 {
@@ -548,53 +521,79 @@ static void OHOS_Node_RegisterEvents(ArkUI_NodeHandle node, Uint32 sdl_window_id
     }
 }
 
-static ArkUI_NodeHandle OHOS_Node_CreateXComponentWithCallbacks(Uint32 sdl_window_id, OHOS_WindowRequest *request)
+static ArkUI_NodeHandle OHOS_Node_CreateXComponentWithSurfaceHolder(uint32_t sdl_window_id)
 {
-    ArkUI_NativeNodeAPI_1 *api = NULL;
-    ArkUI_NodeHandle xc = NULL;
-    OH_ArkUI_SurfaceHolder *holder = NULL;
+    ArkUI_NodeHandle xcomponent = NULL;
     OH_ArkUI_SurfaceCallback *callback = NULL;
-    ArkUI_AttributeItem com_item;
-    ArkUI_NumberValue percent;
+    OH_ArkUI_SurfaceHolder *holder = NULL;
+    ArkUI_NumberValue percent[] = { { .f32 = 1.0f } };
+    ArkUI_AttributeItem percent_item = { percent, 1 };
+    ArkUI_AttributeItem id_item = { NULL };
+    char id_buf[32];
 
-    api = OHOS_Tool_EnsureNodeApi();
-    xc = api->createNode(ARKUI_NODE_XCOMPONENT);
-    com_item.string = "native_xcomponent";
-    api->setAttribute(xc, NODE_XCOMPONENT_ID, &com_item);
-    percent.f32 = 1.0f;
-    com_item.value=&percent;
-    com_item.size = 1;
-    api->setAttribute(xc, NODE_WIDTH_PERCENT, &com_item);
-    api->setAttribute(xc, NODE_HEIGHT_PERCENT, &com_item);
-    percent.i32 = 1;
-    api->setAttribute(xc, NODE_FOCUSABLE, &com_item);
-    api->setLengthMetricUnit(xc, ARKUI_LENGTH_METRIC_UNIT_PX);
+    SDL_snprintf(id_buf, sizeof(id_buf), "sdl_xcomponent_%u", (unsigned int)sdl_window_id);
+    SDL_LogInfo(SDL_LOG_CATEGORY_VIDEO, "OHOS xcomponent: window=%u id=%s", (unsigned int)sdl_window_id, id_buf);
+    id_item.string = id_buf;
 
-    holder = OH_ArkUI_SurfaceHolder_Create(xc);
+    xcomponent = node_api->createNode(ARKUI_NODE_XCOMPONENT);
+    node_api->setAttribute(xcomponent, NODE_WIDTH_PERCENT, &percent_item);
+    node_api->setAttribute(xcomponent, NODE_HEIGHT_PERCENT, &percent_item);
+    node_api->setAttribute(xcomponent, NODE_XCOMPONENT_ID, &id_item);
+    holder = OH_ArkUI_SurfaceHolder_Create(xcomponent);
     callback = OH_ArkUI_SurfaceCallback_Create();
+    OH_ArkUI_SurfaceHolder_SetUserData(holder, (void *)(intptr_t)sdl_window_id);
     OH_ArkUI_SurfaceCallback_SetSurfaceCreatedEvent(callback, OHOS_SurfaceHolder_OnCreated);
     OH_ArkUI_SurfaceCallback_SetSurfaceChangedEvent(callback, OHOS_SurfaceHolder_OnChanged);
     OH_ArkUI_SurfaceCallback_SetSurfaceDestroyedEvent(callback, OHOS_SurfaceHolder_OnDestroyed);
-    OH_ArkUI_SurfaceHolder_AddSurfaceCallback(holder, callback);
-
-    *request->surface_holder_slot = holder;
-    *request->surface_callback_slot = callback;
-
-    return xc;
+    SDL_LogInfo(SDL_LOG_CATEGORY_VIDEO, "OHOS xcomponent: node=%p holder=%p callback=%p add=%d",
+                (void *)xcomponent, (void *)holder, (void *)callback,
+                (int)OH_ArkUI_SurfaceHolder_AddSurfaceCallback(holder, callback));
+    return xcomponent;
 }
 
 static void OHOS_Node_DestroyXComponent()
 {}
 
+/* NodeContent tools */
+
+static void OHOS_NodeContent_OnEvent(ArkUI_NodeContentEvent *event)
+{
+    ArkUI_NodeContentEventType type;
+    ArkUI_NodeHandle node = NULL;
+    ArkUI_NodeContentHandle node_content = NULL;
+    uint32_t sdl_window_id = 0;
+
+    node_content = OH_ArkUI_NodeContentEvent_GetNodeContentHandle(event);
+    type = OH_ArkUI_NodeContentEvent_GetEventType(event);
+    sdl_window_id = (uint32_t)(intptr_t)OH_ArkUI_NodeContent_GetUserData(node_content);
+    SDL_LogInfo(SDL_LOG_CATEGORY_VIDEO, "OHOS node content: event=%d content=%p window=%u",
+                (int)type, (void *)node_content, (unsigned int)sdl_window_id);
+
+    if (type != NODE_CONTENT_EVENT_ON_ATTACH_TO_WINDOW) {
+        return;
+    }
+
+    node = OHOS_Node_CreateXComponentWithSurfaceHolder(sdl_window_id);
+    if (node == NULL) {
+        SDL_LogError(SDL_LOG_CATEGORY_VIDEO, "OHOS node content: xcomponent creation failed");
+        return;
+    }
+    SDL_LogInfo(SDL_LOG_CATEGORY_VIDEO, "OHOS node content: add %p to %p -> %d",
+                (void *)node, (void *)node_content,
+                (int)OH_ArkUI_NodeContent_AddNode(node_content, node));
+}
+
 /* JS thread-related processing interfaces */
 
-static char                     g_ohos_window_page_name[256] = "pages/SDL2Page";
+static char                     g_ohos_window_page_name[256] = "pages/MainWindowPage";
 static napi_ref                 g_ohos_ability_ref =        NULL;
 static napi_ref                 g_ohos_i18n_ref =           NULL;
 static napi_ref                 g_ohos_window_stage_ref =   NULL;
+static napi_ref                 g_ohos_local_storage_factory_ref = NULL;
 static Uint32                   g_ohos_main_window_id =     0;
 
 static napi_threadsafe_function g_ohos_window_request_tsf = NULL;
+static char                     g_ohos_app_library[56] = "";
 
 /* Window event listeners */
 
@@ -835,40 +834,10 @@ static napi_value OHOS_JS_Window_OnRequestDone(napi_env env, napi_callback_info 
 static napi_value OHOS_JS_Window_OnContentLoaded(napi_env env, napi_callback_info info)
 {
     napi_value retval = NULL;
-    void *data = NULL;
-    OHOS_WindowRequest *request = NULL;
-    napi_value window = NULL;
-    napi_value get_ui_context_fn = NULL;
-    napi_value ui_context = NULL;
-    napi_value get_page_root_fn = NULL;
-    napi_value root_frame_node = NULL;
-    ArkUI_NodeHandle root_node_handle = NULL;
-    ArkUI_NodeHandle xc_handle = NULL;
-    ArkUI_NativeNodeAPI_1 *api = NULL;
 
-    napi_get_cb_info(env, info, NULL, NULL, NULL, &data);
-    request = (OHOS_WindowRequest *)data;
-    napi_get_reference_value(env, *request->ohos_window_ref_slot, &window);
-    napi_get_named_property(env, window, "getUIContext", &get_ui_context_fn);
-    napi_call_function(env, window, get_ui_context_fn, 0, NULL, &ui_context);
-    napi_get_named_property(env, ui_context, "getPageRootNode", &get_page_root_fn);
-    napi_call_function(env, ui_context, get_page_root_fn, 0, NULL, &root_frame_node);
-
-    OH_ArkUI_GetNodeHandleFromNapiValue(env, root_frame_node, &root_node_handle);
-    OHOS_Tool_EnableCrossLanguage(root_node_handle);
-    api = OHOS_Tool_EnsureNodeApi();
-    xc_handle = OHOS_Node_CreateXComponentWithCallbacks(request->sdl_window_id, request);
-    api->addChild(root_node_handle, xc_handle);
-
-    /* The content is loaded before the XComponent exists, so nothing focuses it.
-       Once focused, the framework follows the window on its own. */
-    if (OH_ArkUI_FocusRequest(xc_handle) != ARKUI_ERROR_CODE_NO_ERROR) {
-        SDL_LogError(SDL_LOG_CATEGORY_VIDEO, "OH_ArkUI_FocusRequest: focusing the XComponent failed");
-    }
-
+    /* The page creates the XComponent itself and hands it over through handleNodeContent,
+       so nothing has to be built here. */
     napi_get_undefined(env, &retval);
-    *request->xc_slot = xc_handle;
-    *request->parent_slot = root_node_handle;
     return retval;
 }
 
@@ -881,6 +850,8 @@ static napi_value OHOS_JS_Window_OnWindowObtained(napi_env env, napi_callback_in
     OHOS_WindowRequest *request = NULL;
     napi_value promise = NULL;
     napi_value path = NULL, properteis = NULL, id = NULL;
+    napi_value storage = NULL;
+    napi_value load_args[2] = { NULL, NULL };
     SDL_Event event;
 
     napi_get_cb_info(env, info, &argc, argv, NULL, &data);
@@ -904,7 +875,31 @@ static napi_value OHOS_JS_Window_OnWindowObtained(napi_env env, napi_callback_in
 
     napi_create_string_utf8(env, g_ohos_window_page_name, NAPI_AUTO_LENGTH, &path);
     napi_get_named_property(env, argv[0], "loadContent", &load_content_fn);
-    napi_call_function(env, argv[0], load_content_fn, 1, &path, &promise);
+
+    /* The page reads the createInfo object out of the storage this library hands over. */
+    if (g_ohos_local_storage_factory_ref != NULL) {
+        napi_value factory = NULL;
+        napi_value create_info = NULL;
+        napi_value properties = NULL;
+        napi_value window_id_value = NULL;
+
+        napi_get_reference_value(env, g_ohos_local_storage_factory_ref, &factory);
+
+        napi_create_object(env, &create_info);
+        napi_create_uint32(env, request->sdl_window_id, &window_id_value);
+        napi_set_named_property(env, create_info, "sdlWindowId", window_id_value);
+
+        napi_create_object(env, &properties);
+        napi_set_named_property(env, properties, "createInfo", create_info);
+
+        napi_call_function(env, factory, factory, 1, &properties, &storage);
+    }
+
+    load_args[0] = path;
+    load_args[1] = storage;
+    SDL_LogInfo(SDL_LOG_CATEGORY_VIDEO, "OHOS window: page=%s storage=%p",
+                g_ohos_window_page_name, (void *)storage);
+    napi_call_function(env, argv[0], load_content_fn, storage != NULL ? 2 : 1, load_args, &promise);
 
     return promise;
 }
@@ -952,17 +947,11 @@ static napi_value OHOS_JS_Window_OnDestroy(napi_env env, napi_callback_info info
 {
     void *data;
     OHOS_WindowRequest *request = NULL;
-    ArkUI_NativeNodeAPI_1 *api = NULL;
     napi_value destroy_fn = NULL, promise = NULL;
 
     napi_get_cb_info(env, info, 0, NULL, NULL, &data);
     request = (OHOS_WindowRequest *)data;
-    OH_ArkUI_SurfaceHolder_RemoveSurfaceCallback(request->surface_holder_value, request->surface_callback_value);
-    OH_ArkUI_SurfaceCallback_Dispose(request->surface_callback_value);
-    OH_ArkUI_SurfaceHolder_Dispose(request->surface_holder_value);
-    api = OHOS_Tool_EnsureNodeApi();
-    api->removeChild(request->parent_value, request->xc_value);
-    api->disposeNode(request->xc_value);
+
 
     if (request->sdl_window_id == g_ohos_main_window_id) {
         napi_value stage = NULL;
@@ -1385,19 +1374,11 @@ static napi_value OHOS_JS_Window_Dispatch(napi_env env, napi_callback_info info)
     request->ohos_window_id_value = queue->ohos_window_id;
     switch (request->cmd) {
         case OHOS_WINDOW_CMD_CREATE:
-            request->xc_slot = &queue->xc;
-            request->parent_slot = &queue->parent;
-            request->surface_holder_slot = &queue->surface_holder;
-            request->surface_callback_slot = &queue->surface_callback;
             request->ohos_window_ref_slot = &queue->ohos_window_ref;
             request->ohos_window_id_slot = &queue->ohos_window_id;
             promise = OHOS_JS_Window_Create(env, promise, request);
             break;
         case OHOS_WINDOW_CMD_DESTROY:
-            request->xc_value = queue->xc;
-            request->parent_value = queue->parent;
-            request->surface_holder_value = queue->surface_holder;
-            request->surface_callback_value = queue->surface_callback;
             SDL_free(queue);
             promise = OHOS_JS_Window_Destroy(env, promise, request);
             break;
@@ -1894,101 +1875,6 @@ int OHOS_Window_Flash(Uint32 sdl_window_id, SDL_FlashOperation operation)
     return SDL_Unsupported();
 }
 
-/* UIAbility Lifecycle Callbacks */
-
-static napi_value OHOS_JS_UIAbility_OnDestroy(napi_env env, napi_callback_info info)
-{
-    napi_value retval = NULL;
-
-    napi_delete_reference(env, g_ohos_ability_ref);
-    g_ohos_ability_ref = NULL;
-    napi_get_undefined(env, &retval);
-    return retval;
-}
-
-static napi_value OHOS_JS_UIAbility_OnWillForeground(napi_env env, napi_callback_info info)
-{
-    napi_value retval = NULL;
-
-    SDL_OnApplicationWillEnterForeground();
-    napi_get_undefined(env, &retval);
-    return retval;
-}
-
-static napi_value OHOS_JS_UIAbility_OnDidForeground(napi_env env, napi_callback_info info)
-{
-    napi_value retval = NULL;
-
-    SDL_OnApplicationDidBecomeActive();
-    napi_get_undefined(env, &retval);
-    return retval;
-}
-
-static napi_value OHOS_JS_UIAbility_OnWillBackground(napi_env env, napi_callback_info info)
-{
-    napi_value retval = NULL;
-
-    SDL_OnApplicationWillResignActive();
-    napi_get_undefined(env, &retval);
-    return retval;
-}
-
-static napi_value OHOS_JS_UIAbility_OnDidBackground(napi_env env, napi_callback_info info)
-{
-    napi_value retval = NULL;
-
-    SDL_OnApplicationDidEnterBackground();
-    napi_get_undefined(env, &retval);
-    return retval;
-}
-
-static napi_value OHOS_JS_UIAbility_OnWindowStageCreate(napi_env env, napi_callback_info info)
-{
-    napi_value retval = NULL;
-    size_t argc = 1;
-    napi_value argv[1] = {NULL};
-
-    napi_get_cb_info(env, info, &argc, argv, NULL, NULL);
-    if (g_ohos_window_stage_ref) {
-        napi_delete_reference(env, g_ohos_window_stage_ref);
-        g_ohos_window_stage_ref = NULL;
-    }
-    napi_create_reference(env, argv[0], 1, &g_ohos_window_stage_ref);
-
-    /* The window request channel must exist before SDL_main can ask for a window. */
-    OHOS_JS_Window_Init(env, NULL);
-
-    OHOS_Main_StartApp();
-
-    napi_get_undefined(env, &retval);
-    return retval;
-}
-
-static napi_value OHOS_JS_UIAbility_OnWindowStageWillDestroy(napi_env env, napi_callback_info info)
-{
-    napi_value retval = NULL;
-
-    SDL_OnApplicationWillTerminate();
-    napi_get_undefined(env, &retval);
-    return retval;
-}
-
-static napi_value OHOS_JS_UIAbility_OnWindowStageDestroy(napi_env env, napi_callback_info info)
-{
-    napi_value retval = NULL;
-
-    if (g_ohos_window_request_tsf != NULL) {
-        napi_release_threadsafe_function(g_ohos_window_request_tsf, napi_tsfn_abort);
-        g_ohos_window_request_tsf = NULL;
-    }
-    if (g_ohos_window_stage_ref != NULL) {
-        napi_delete_reference(env, g_ohos_window_stage_ref);
-        g_ohos_window_stage_ref = NULL;
-    }
-    napi_get_undefined(env, &retval);
-    return retval;
-}
-
 /* System locale */
 
 #define OHOS_LOCALE_MAX 64
@@ -2061,144 +1947,92 @@ void OHOS_Locale_GetPreferredLocales(char *buf, size_t buflen)
     }
 }
 
-static napi_value OHOS_JS_UIAbility_OnConfigurationUpdate(napi_env env, napi_callback_info info)
+/* Starts the application: the OHOS ability hands control to this library, which then
+   loads the application library and runs its main function on a separate thread. */
+static void *OHOS_StartMainThread(void *unused)
 {
-    napi_value retval = NULL;
+    static char prog[] = "app";
+    char *argv[] = { prog, NULL };
+    SDL_main_func p_main;
+    void *handle;
 
-    /* The locale is the only configuration entry this backend tracks. */
-    if (OHOS_JS_UpdateSystemLocale(env)) {
-        SDL_Event sdl_event;
+    (void)unused;
 
-        SDL_zero(sdl_event);
-        sdl_event.type = SDL_LOCALECHANGED;
-        SDL_PushEvent(&sdl_event);
+    SDL_SetMainReady();
+
+    handle = dlopen(g_ohos_app_library, RTLD_NOW | RTLD_LOCAL);
+    if (!handle) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                     "OHOS_Main_StartApp: cannot load '%s'", g_ohos_app_library);
+        return NULL;
     }
 
-    napi_get_undefined(env, &retval);
-    return retval;
-}
-
-static napi_value OHOS_JS_UIAbility_OnMemoryLevel(napi_env env, napi_callback_info info)
-{
-    napi_value retval = NULL;
-    size_t argc = 1;
-    napi_value argv[1] = { NULL };
-    int32_t memory_level = 0;
-
-    napi_get_cb_info(env, info, &argc, argv, NULL, NULL);
-    napi_get_value_int32(env, argv[0], &memory_level);
-    if (memory_level == 2) {
-        SDL_OnApplicationDidReceiveMemoryWarning();
+    p_main = (SDL_main_func)dlsym(handle, "SDL_main");
+    if (!p_main) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                     "OHOS_Main_StartApp: '%s' does not export SDL_main", g_ohos_app_library);
+        dlclose(handle);
+        return NULL;
     }
-    napi_get_undefined(env, &retval);
-    return retval;
+
+    p_main(1, argv);
+    dlclose(handle);
+    return NULL;
 }
 
-static void TakeOverUIAbility(napi_env env, napi_value ability)
+static void OHOS_Main_StartApp(void)
 {
-    napi_value proto = NULL;
-    napi_value fn = NULL;
+    static SDL_bool started = SDL_FALSE;
+    pthread_t thread;
+    int rc;
 
-    napi_get_prototype(env, ability, &proto);
-    napi_create_function(env, "onDestroy",                NAPI_AUTO_LENGTH, OHOS_JS_UIAbility_OnDestroy,                NULL, &fn);
-    napi_set_named_property(env, proto, "onDestroy",                fn);
-    napi_create_function(env, "onWillForeground",         NAPI_AUTO_LENGTH, OHOS_JS_UIAbility_OnWillForeground,         NULL, &fn);
-    napi_set_named_property(env, proto, "onWillForeground",         fn);
-    napi_create_function(env, "onDidForeground",          NAPI_AUTO_LENGTH, OHOS_JS_UIAbility_OnDidForeground,          NULL, &fn);
-    napi_set_named_property(env, proto, "onDidForeground",          fn);
-    napi_create_function(env, "onWillBackground",         NAPI_AUTO_LENGTH, OHOS_JS_UIAbility_OnWillBackground,         NULL, &fn);
-    napi_set_named_property(env, proto, "onWillBackground",         fn);
-    napi_create_function(env, "onDidBackground",          NAPI_AUTO_LENGTH, OHOS_JS_UIAbility_OnDidBackground,          NULL, &fn);
-    napi_set_named_property(env, proto, "onDidBackground",          fn);
-    napi_create_function(env, "onWindowStageCreate",      NAPI_AUTO_LENGTH, OHOS_JS_UIAbility_OnWindowStageCreate,      NULL, &fn);
-    napi_set_named_property(env, proto, "onWindowStageCreate",      fn);
-    napi_create_function(env, "onWindowStageWillDestroy", NAPI_AUTO_LENGTH, OHOS_JS_UIAbility_OnWindowStageWillDestroy, NULL, &fn);
-    napi_set_named_property(env, proto, "onWindowStageWillDestroy", fn);
-    napi_create_function(env, "onWindowStageDestroy",     NAPI_AUTO_LENGTH, OHOS_JS_UIAbility_OnWindowStageDestroy,     NULL, &fn);
-    napi_set_named_property(env, proto, "onWindowStageDestroy",     fn);
-    napi_create_function(env, "onMemoryLevel",            NAPI_AUTO_LENGTH, OHOS_JS_UIAbility_OnMemoryLevel,            NULL, &fn);
-    napi_set_named_property(env, proto, "onMemoryLevel",            fn);
-    napi_create_function(env, "onConfigurationUpdate",    NAPI_AUTO_LENGTH, OHOS_JS_UIAbility_OnConfigurationUpdate,    NULL, &fn);
-    napi_set_named_property(env, proto, "onConfigurationUpdate",    fn);
+    if (started) {
+        return;
+    }
+    started = SDL_TRUE;
+
+    rc = pthread_create(&thread, NULL, OHOS_StartMainThread, NULL);
+    if (rc != 0) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "OHOS_Main_StartApp: pthread_create=%d", rc);
+        return;
+    }
+    pthread_detach(thread);
 }
 
 /* Register related interfaces and bind UIAbility lifecycle callback functions. */
 
-static void OHOS_Window_SetPageName(const char *name)
-{
-    if (name != NULL && name[0] != '\0') {
-        SDL_strlcpy(g_ohos_window_page_name, name, sizeof(g_ohos_window_page_name));
-    }
-}
-
-static napi_value OHOS_Napi_ProvideArkTSObjects(napi_env env, napi_callback_info info)
-{
-    size_t argc =  OHOS_ARGS_MAX;
-    napi_value argv[OHOS_ARGS_MAX] = {NULL};
-    napi_value retval = NULL;
-
-    napi_get_cb_info(env, info, &argc, argv, NULL, NULL);
-    if(argc < OHOS_ARGS_REQUIRED){
-        napi_throw_type_error(env, NULL, "invalid params");
-        return NULL;
-    }
-
-    if(g_ohos_ability_ref){
-        napi_delete_reference(env, g_ohos_ability_ref);
-        g_ohos_ability_ref = NULL;
-    }
-    napi_create_reference(env, argv[OHOS_ARG_ABILITY], 1, &g_ohos_ability_ref);
-    TakeOverUIAbility(env, argv[OHOS_ARG_ABILITY]);
-    if (argc > OHOS_ARG_APP_LIBRARY) {
-        size_t length = 0;
-        char buffer[256];
-        if (napi_get_value_string_utf8(env, argv[OHOS_ARG_APP_LIBRARY], buffer, sizeof(buffer), &length)==napi_ok) {
-            OHOS_Main_SetAppLibrary(buffer);
-        }
-    }
-    if (argc > OHOS_ARG_PAGE_NAME) {
-        size_t length = 0;
-        char buffer[256];
-        if (napi_get_value_string_utf8(env, argv[OHOS_ARG_PAGE_NAME], buffer, sizeof(buffer), &length) == napi_ok) {
-            OHOS_Window_SetPageName(buffer);
-        }
-    }
-    if (argc > OHOS_ARG_I18N) {
-        if (g_ohos_i18n_ref) {
-            napi_delete_reference(env, g_ohos_i18n_ref);
-            g_ohos_i18n_ref = NULL;
-        }
-        napi_create_reference(env, argv[OHOS_ARG_I18N], 1, &g_ohos_i18n_ref);
-
-        if (g_ohos_locale_lock == NULL) {
-            g_ohos_locale_lock = SDL_CreateMutex();
-        }
-        /* Seed the cache now, while we know we are on the JS thread. */
-        OHOS_JS_UpdateSystemLocale(env);
-    }
-
-    napi_get_undefined(env, &retval);
-    return retval;
-}
-
 static napi_value OHOS_Napi_HandleAbilityOnCreate(napi_env env, napi_callback_info info)
 {
-    size_t argc = 3;
-    napi_value argv[3] = { NULL, NULL, NULL };
+    size_t argc = 5;
+    napi_value argv[5] = { NULL, NULL, NULL, NULL, NULL };
     napi_value retval = NULL;
+    char buf[sizeof(g_ohos_app_library)];
 
     napi_get_cb_info(env, info, &argc, argv, NULL, NULL);
-    napi_get_undefined(env, &retval);
-    return retval;
-}
 
-static napi_value OHOS_Napi_HandleAbilityOnNewWant(napi_env env, napi_callback_info info)
-{
-    size_t argc = 3;
-    napi_value argv[3] = { NULL, NULL, NULL };
-    napi_value retval = NULL;
+    SDL_strlcpy(buf, "libmain.so", sizeof(buf));
+    if (argc >= 4) {
+        size_t copied = 0;
 
-    napi_get_cb_info(env, info, &argc, argv, NULL, NULL);
+        if (napi_get_value_string_utf8(env, argv[3], buf, sizeof(buf), &copied) != napi_ok || copied == 0) {
+            SDL_strlcpy(buf, "libmain.so", sizeof(buf));
+        }
+    }
+    SDL_strlcpy(g_ohos_app_library, buf, sizeof(g_ohos_app_library));
+
+    if (argc >= 5) {
+        napi_value module = NULL;
+        napi_value factory = NULL;
+
+        if (napi_get_named_property(env, argv[4], "LocalStorage", &module) == napi_ok && module != NULL &&
+            napi_get_named_property(env, module, "makeNewLocalStorage", &factory) == napi_ok && factory != NULL) {
+            if (g_ohos_local_storage_factory_ref != NULL) {
+                napi_delete_reference(env, g_ohos_local_storage_factory_ref);
+            }
+            napi_create_reference(env, factory, 1, &g_ohos_local_storage_factory_ref);
+        }
+    }
+
     napi_get_undefined(env, &retval);
     return retval;
 }
@@ -2210,6 +2044,9 @@ static napi_value OHOS_Napi_HandleAbilityOnWindowStageCreate(napi_env env, napi_
     napi_value retval = NULL;
 
     napi_get_cb_info(env, info, &argc, argv, NULL, NULL);
+    napi_create_reference(env, argv[1], 1, &g_ohos_window_stage_ref);
+    OHOS_JS_Window_Init(env, NULL);
+    OHOS_Main_StartApp();
     napi_get_undefined(env, &retval);
     return retval;
 }
@@ -2221,9 +2058,8 @@ static napi_value OHOS_Napi_HandleAbilityOnWindowStageWillDestroy(napi_env env, 
     napi_value retval = NULL;
 
     napi_get_cb_info(env, info, &argc, argv, NULL, NULL);
-
     SDL_SendAppEvent(SDL_APP_TERMINATING);
-
+    napi_delete_reference(env, g_ohos_window_stage_ref);
     napi_get_undefined(env, &retval);
     return retval;
 }
@@ -2364,16 +2200,8 @@ static napi_value OHOS_Napi_HandleAbilityOnConfigurationUpdate(napi_env env, nap
     size_t argc = 2;
     napi_value argv[2] = { NULL, NULL };
     napi_value retval = NULL;
-    napi_valuetype ability_type = napi_undefined;
-    napi_valuetype config_type = napi_undefined;
 
     napi_get_cb_info(env, info, &argc, argv, NULL, NULL);
-    napi_typeof(env, argv[0], &ability_type);
-    napi_typeof(env, argv[1], &config_type);
-    SDL_LogInfo(SDL_LOG_CATEGORY_VIDEO,
-                "OHOS ability onConfigurationUpdate: argc=%u ability=%p(%d) newConfig=%p(%d)",
-                (unsigned int)argc, (void *)argv[0], (int)ability_type, (void *)argv[1],
-                (int)config_type);
 
     napi_get_undefined(env, &retval);
     return retval;
@@ -2385,89 +2213,50 @@ static napi_value OHOS_Napi_HandleAbilityOnMemoryLevel(napi_env env, napi_callba
     napi_value argv[2] = { NULL, NULL };
     napi_value retval = NULL;
     int32_t level = 0;
-    napi_valuetype ability_type = napi_undefined;
-    napi_valuetype level_type = napi_undefined;
 
     napi_get_cb_info(env, info, &argc, argv, NULL, NULL);
-    napi_typeof(env, argv[0], &ability_type);
-    napi_typeof(env, argv[1], &level_type);
     napi_get_value_int32(env, argv[1], &level);
-    SDL_LogInfo(SDL_LOG_CATEGORY_VIDEO,
-                "OHOS ability onMemoryLevel: argc=%u ability=%p(%d) level=%d(%d)",
-                (unsigned int)argc, (void *)argv[0], (int)ability_type, (int)level, (int)level_type);
-
+    if (level == 2) {
+        SDL_SendAppEvent(SDL_APP_LOWMEMORY);
+    }
     napi_get_undefined(env, &retval);
     return retval;
 }
-
-static napi_value OHOS_Napi_HandleAbilityOnContinue(napi_env env, napi_callback_info info)
-{
-    size_t argc = 2;
-    napi_value argv[2] = { NULL, NULL };
-    napi_value retval = NULL;
-    napi_valuetype ability_type = napi_undefined;
-    napi_valuetype want_param_type = napi_undefined;
-
-    napi_get_cb_info(env, info, &argc, argv, NULL, NULL);
-    napi_typeof(env, argv[0], &ability_type);
-    napi_typeof(env, argv[1], &want_param_type);
-    SDL_LogInfo(SDL_LOG_CATEGORY_VIDEO,
-                "OHOS ability onContinue: argc=%u ability=%p(%d) wantParam=%p(%d)",
-                (unsigned int)argc, (void *)argv[0], (int)ability_type, (void *)argv[1],
-                (int)want_param_type);
-
-    napi_create_int32(env, 0, &retval);
-    return retval;
-}
-
-
-
-
-
-
 
 static napi_value OHOS_Napi_HandleAbilityOnDestroy(napi_env env, napi_callback_info info)
 {
     size_t argc = 1;
     napi_value argv[1] = { NULL };
     napi_value retval = NULL;
-    napi_valuetype ability_type = napi_undefined;
 
     napi_get_cb_info(env, info, &argc, argv, NULL, NULL);
-    napi_typeof(env, argv[0], &ability_type);
-    SDL_LogInfo(SDL_LOG_CATEGORY_VIDEO, "OHOS ability onDestroy: argc=%u ability=%p(%d)",
-                (unsigned int)argc, (void *)argv[0], (int)ability_type);
+
+    if (g_ohos_local_storage_factory_ref != NULL) {
+        napi_delete_reference(env, g_ohos_local_storage_factory_ref);
+        g_ohos_local_storage_factory_ref = NULL;
+    }
 
     napi_get_undefined(env, &retval);
     return retval;
 }
-/* Exposed to the page: addNode(nodeContent, sdlWindowId) receives the NodeContent the
-   page provides and the SDL window the node has to be created for. */
-static napi_value OHOS_Napi_AddNode(napi_env env, napi_callback_info info)
+
+static napi_value OHOS_Napi_HandleNodeContent(napi_env env, napi_callback_info info)
 {
     size_t argc = 2;
-    napi_value argv[2] = { NULL, NULL };
+    napi_value argv[2] = { NULL };
     napi_value retval = NULL;
     ArkUI_NodeContentHandle content = NULL;
     uint32_t sdl_window_id = 0;
-    int32_t content_status;
-    napi_status id_status;
 
     napi_get_cb_info(env, info, &argc, argv, NULL, NULL);
-    if (argc < 2) {
-        SDL_LogError(SDL_LOG_CATEGORY_VIDEO, "OHOS addNode: expected (nodeContent, sdlWindowId)");
-        napi_get_boolean(env, false, &retval);
-        return retval;
-    }
 
-    content_status = OH_ArkUI_GetNodeContentFromNapiValue(env, argv[0], &content);
-    id_status = napi_get_value_uint32(env, argv[1], &sdl_window_id);
+    OH_ArkUI_GetNodeContentFromNapiValue(env, argv[0], &content);
+    napi_get_value_uint32(env, argv[1], &sdl_window_id);
+    OHOS_Tool_EnsureNodeApi();
+    OH_ArkUI_NodeContent_SetUserData(content, (void *)(intptr_t)sdl_window_id);
+    OH_ArkUI_NodeContent_RegisterCallback(content, OHOS_NodeContent_OnEvent);
 
-    SDL_LogInfo(SDL_LOG_CATEGORY_VIDEO,
-                "OHOS addNode: nodeContent=%p contentStatus=%d sdlWindowId=%u idStatus=%d",
-                (void *)content, (int)content_status, sdl_window_id, (int)id_status);
-
-    napi_get_boolean(env, content != NULL && id_status == napi_ok, &retval);
+    napi_get_undefined(env, &retval);
     return retval;
 }
 
@@ -2475,7 +2264,6 @@ static napi_value OHOS_Napi_InitModule(napi_env env, napi_value exports)
 {
     napi_property_descriptor desc[] = {
         {"handleAbilityOnCreate",                    NULL, OHOS_Napi_HandleAbilityOnCreate, NULL, NULL, NULL, napi_default, NULL},
-        {"handleAbilityOnNewWant",                   NULL, OHOS_Napi_HandleAbilityOnNewWant, NULL, NULL, NULL, napi_default, NULL},
         {"handleAbilityOnWindowStageCreate",         NULL, OHOS_Napi_HandleAbilityOnWindowStageCreate, NULL, NULL, NULL, napi_default, NULL},
         {"handleAbilityOnWindowStageWillDestroy",    NULL, OHOS_Napi_HandleAbilityOnWindowStageWillDestroy, NULL, NULL, NULL, napi_default, NULL},
         {"handleAbilityOnWindowStageRestore",        NULL, OHOS_Napi_HandleAbilityOnWindowStageRestore, NULL, NULL, NULL, napi_default, NULL},
@@ -2490,9 +2278,8 @@ static napi_value OHOS_Napi_InitModule(napi_env env, napi_value exports)
         {"handleAbilityOnPrepareToTerminateAsync",   NULL, OHOS_Napi_HandleAbilityOnPrepareToTerminateAsync, NULL, NULL, NULL, napi_default, NULL},
         {"handleAbilityOnConfigurationUpdate",       NULL, OHOS_Napi_HandleAbilityOnConfigurationUpdate, NULL, NULL, NULL, napi_default, NULL},
         {"handleAbilityOnMemoryLevel",               NULL, OHOS_Napi_HandleAbilityOnMemoryLevel, NULL, NULL, NULL, napi_default, NULL},
-        {"handleAbilityOnContinue",                  NULL, OHOS_Napi_HandleAbilityOnContinue, NULL, NULL, NULL, napi_default, NULL},
         {"handleAbilityOnDestroy",                   NULL, OHOS_Napi_HandleAbilityOnDestroy, NULL, NULL, NULL, napi_default, NULL},
-        {"addNode",                                  NULL, OHOS_Napi_AddNode, NULL, NULL, NULL, napi_default, NULL},
+        {"handleNodeContent",                        NULL, OHOS_Napi_HandleNodeContent, NULL, NULL, NULL, napi_default, NULL},
     };
     napi_define_properties(env, exports, sizeof(desc)/sizeof(desc[0]), desc);
 
@@ -2514,65 +2301,5 @@ __attribute__((constructor)) void OHOS_Napi_RegisterModule(void)
     napi_module_register(&g_ohos_napi_module);
 }
 
-/* Application startup */
-
-static char g_ohos_app_library[256] = "libmain.so";
-
-void OHOS_Main_SetAppLibrary(const char *library)
-{
-    if (library && library[0]) {
-        SDL_strlcpy(g_ohos_app_library, library, sizeof(g_ohos_app_library));
-    }
-}
-
-static void *OHOS_StartMainThread(void *unused)
-{
-    static char prog[] = "app";
-    char *argv[] = { prog, NULL };
-    SDL_main_func p_main;
-    void *handle;
-
-    (void)unused;
-
-    SDL_SetMainReady();
-
-    handle = dlopen(g_ohos_app_library, RTLD_NOW | RTLD_LOCAL);
-    if (!handle) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                     "OHOS_Main_StartApp: cannot load '%s'", g_ohos_app_library);
-        return NULL;
-    }
-
-    p_main = (SDL_main_func)dlsym(handle, "SDL_main");
-    if (!p_main) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                     "OHOS_Main_StartApp: '%s' does not export SDL_main", g_ohos_app_library);
-        dlclose(handle);
-        return NULL;
-    }
-
-    p_main(1, argv);
-    dlclose(handle);
-    return NULL;
-}
-
-void OHOS_Main_StartApp(void)
-{
-    static SDL_bool started = SDL_FALSE;
-    pthread_t thread;
-    int rc;
-
-    if (started) {
-        return;
-    }
-    started = SDL_TRUE;
-
-    rc = pthread_create(&thread, NULL, OHOS_StartMainThread, NULL);
-    if (rc != 0) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "OHOS_Main_StartApp: pthread_create=%d", rc);
-        return;
-    }
-    pthread_detach(thread);
-}
 
 /* vi: set ts=4 sw=4 expandtab: */

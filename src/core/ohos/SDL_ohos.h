@@ -83,9 +83,6 @@ typedef enum OHOS_WindowEventCode
     OHOS_WINDOW_EVENT_ID_ASSIGNED             /* window obtained,        data1 = OHOS window id */
 } OHOS_WindowEventCode;
 
-extern void OHOS_Main_SetAppLibrary(const char *library);
-
-extern void OHOS_Main_StartApp(void);
 
 /* Copies the cached system locale, "language_REGION"; safe from any SDL thread. */
 extern void OHOS_Locale_GetPreferredLocales(char *buf, size_t buflen);
