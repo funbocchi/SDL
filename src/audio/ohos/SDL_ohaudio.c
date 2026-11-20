@@ -209,6 +209,8 @@ static OH_AudioData_Callback_Result OHAudio_OnWriteData(OH_AudioRenderer *render
 {
     SDL_AudioDevice *this = (SDL_AudioDevice *)userData;
     struct SDL_PrivateAudioData *hidden;
+    static int ohos_cb_total = 0;
+    static int ohos_cb_underruns = 0;
     int size;
 
     (void)renderer;
@@ -218,6 +220,8 @@ static OH_AudioData_Callback_Result OHAudio_OnWriteData(OH_AudioRenderer *render
         return AUDIO_DATA_CALLBACK_RESULT_VALID;
     }
     hidden = this->hidden;
+
+    ++ohos_cb_total;
 
     if (hidden->filled_blocks != NULL && SDL_SemWaitTimeout(hidden->filled_blocks, 0) == 0) {
         size = SDL_min((int)audioDataSize, hidden->block_size);
@@ -229,7 +233,13 @@ static OH_AudioData_Callback_Result OHAudio_OnWriteData(OH_AudioRenderer *render
         SDL_SemPost(hidden->free_blocks);
     } else {
         /* Underrun: keep the stream running with silence. */
+        ++ohos_cb_underruns;
         SDL_memset(audioData, 0, audioDataSize);
+    }
+
+    if ((ohos_cb_total % 100) == 0) {
+        SDL_LogError(SDL_LOG_CATEGORY_AUDIO, "OHAudio stats: callbacks=%d underruns=%d size=%d block=%d",
+                     ohos_cb_total, ohos_cb_underruns, (int)audioDataSize, hidden->block_size);
     }
 
     return AUDIO_DATA_CALLBACK_RESULT_VALID;
@@ -369,6 +379,7 @@ static int OHAudio_OpenDevice(_THIS, const char *devname)
     OH_AudioStreamBuilder_SetSamplingRate(builder, this->spec.freq);
     OH_AudioStreamBuilder_SetChannelCount(builder, this->spec.channels);
     OH_AudioStreamBuilder_SetLatencyMode(builder, AUDIOSTREAM_LATENCY_MODE_FAST);
+    OH_AudioStreamBuilder_SetFrameSizeInCallback(builder, 1024);
 
     if (this->iscapture) {
         /* CAMCORDER is the recording source, not the one used for phone calls. */
