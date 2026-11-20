@@ -5,11 +5,11 @@
       "value": "module description"
     },
     {
-      "name": "ohosSdl2SampleAbility_desc",
+      "name": "SDLAbility_desc",
       "value": "description"
     },
     {
-      "name": "ohosSdl2SampleAbility_label",
+      "name": "SDLAbility_label",
       "value": "label"
     }
   ]

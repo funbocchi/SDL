@@ -1,5 +1,6 @@
 {
   "src": [
-    "pages/SDL2Page"
+    "pages/MainWindowPage",
+    "pages/SubWindowPage"
   ]
 }
